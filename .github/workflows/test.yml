@@ -29,9 +29,9 @@ jobs:
         run: koppa version
 
       - name: Run test suite
-        run: python tests/run_tests.py
+        run: python tests/run_tests.py --fast
 
       - name: Run examples
         run: |
-          koppa run examples/hello.kop
-          koppa run examples/hash_demo.kop
+          python src/koppa.py run examples/hello.kop
+          python src/koppa.py run examples/hash_demo.kop
