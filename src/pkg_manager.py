@@ -28,7 +28,7 @@ PACKAGES_DIR  = KOPPA_HOME / "packages"
 REGISTRY_CACHE = KOPPA_HOME / "registry.json"
 
 REGISTRY_URL = (
-    "https://raw.githubusercontent.com/YOUR_USERNAME/koppa-registry/main/index.json"
+    "https://raw.githubusercontent.com/guea14012/koppa-registry/main/index.json"
 )
 
 # Bundled fallback registry (works offline for built-ins)
