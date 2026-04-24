@@ -8,7 +8,8 @@ version = "2.0.0"
 description = "KOPPA — Advanced Pentesting Domain-Specific Language"
 readme = "README.md"
 requires-python = ">=3.8"
-license = { text = "MIT" }
+license = "MIT"
+authors = [{ name = "KOPPA Team", email = "kua.kuakun@gmail.com" }]
 keywords = ["pentesting", "security", "dsl", "language", "scripting"]
 classifiers = [
     "Programming Language :: Python :: 3",
