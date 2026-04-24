@@ -1,0 +1,43 @@
+# KOPPA Crypto Demo
+# Demonstrates built-in cryptography primitives
+# Usage: koppa run examples/hash_demo.kop
+
+import crypto, log
+
+fn demo_hashes(data) {
+    let md5    = crypto.hash_md5(data)
+    let sha256 = crypto.hash_sha256(data)
+    let sha512 = crypto.hash_sha512(data)
+    log.info("Input : \"{data}\"")
+    log.info("  MD5   : {md5}")
+    log.info("  SHA256: {sha256}")
+    log.info("  SHA512: {sha512}")
+}
+
+fn demo_encoding(data) {
+    let encoded = crypto.encode_base64(data)
+    let decoded = crypto.decode_base64(encoded)
+    log.info("Original : {data}")
+    log.info("  Base64 : {encoded}")
+    log.info("  Decoded: {decoded}")
+}
+
+fn main() {
+    log.info("===== KOPPA Crypto Demo =====")
+    log.info("")
+
+    log.info("--- Hash Functions ---")
+    demo_hashes("hello world")
+    demo_hashes("password123")
+
+    log.info("")
+    log.info("--- Base64 Encoding ---")
+    demo_encoding("secret payload")
+
+    log.info("")
+    log.info("--- NTLM Hash ---")
+    let ntlm = crypto.hash_ntlm("Password1!")
+    log.info("NTLM('Password1!'): {ntlm}")
+
+    log.success("Crypto demo complete!")
+}

@@ -1,0 +1,12 @@
+{
+    "files.associations": {
+        "*.kop": "rust",
+        "*.apo": "rust",
+        "*.apc": "binary"
+    },
+    "workbench.iconTheme": "material-icon-theme",
+    "material-icons.associations.files": {
+        "kop": "rust",
+        "apo": "rust"
+    }
+}

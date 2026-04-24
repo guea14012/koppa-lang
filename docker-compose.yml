@@ -1,0 +1,27 @@
+## KOPPA Docker Compose
+## Usage:
+##   docker compose run koppa run examples/hello.kop
+##   docker compose run koppa repl
+
+services:
+  koppa:
+    build: .
+    image: koppa-lang:latest
+    volumes:
+      # Mount current directory as /scripts so you can run local .kop files
+      - .:/scripts
+    working_dir: /scripts
+    # Override ENTRYPOINT for interactive REPL
+    stdin_open: true
+    tty: true
+    network_mode: host   # needed for scan.tcp() to reach target hosts
+
+  # Run a specific script
+  run:
+    build: .
+    image: koppa-lang:latest
+    volumes:
+      - .:/scripts
+    working_dir: /scripts
+    network_mode: host
+    command: ["run", "examples/hello.kop"]

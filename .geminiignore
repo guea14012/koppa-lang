@@ -1,0 +1,23 @@
+# APOLLO Temporary and Cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Build and Distribution
+APOLLO_DIST/
+dist/
+build/
+*.spec
+*.zip
+*.tar.gz
+
+# Compiled APOLLO bytecode
+*.apc
+
+# Temporary test files
+test*.apollo
+tmp_*

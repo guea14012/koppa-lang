@@ -1,0 +1,40 @@
+# winget manifest for KOPPA Language
+#
+# To publish:
+#   1. Fork https://github.com/microsoft/winget-pkgs
+#   2. Place this file at:
+#      manifests/k/KoppaLang/Koppa/2.0.0/KoppaLang.Koppa.yaml
+#   3. Replace InstallerUrl and InstallerSha256 with your actual release values
+#   4. Submit a PR
+#
+# Test locally before submitting:
+#   winget install --manifest winget/
+
+PackageIdentifier: KoppaLang.Koppa
+PackageVersion: "2.0.0"
+PackageName: KOPPA
+PackageLocale: en-US
+Publisher: KoppaLang
+PublisherUrl: https://github.com/YOUR_USERNAME/koppa-lang
+ShortDescription: Advanced Pentesting Domain-Specific Language
+Description: >
+  KOPPA is a scripting language built for penetration testers.
+  It provides built-in modules for port scanning, DNS recon, HTTP probing,
+  cryptographic operations, and file I/O — all in a clean, readable syntax.
+License: MIT
+LicenseUrl: https://github.com/YOUR_USERNAME/koppa-lang/blob/main/LICENSE
+Tags:
+  - pentesting
+  - security
+  - scripting
+  - language
+  - dsl
+ManifestType: singleton
+ManifestVersion: 1.4.0
+
+Installers:
+  - Architecture: x64
+    InstallerType: portable
+    InstallerUrl: https://github.com/YOUR_USERNAME/koppa-lang/releases/download/v2.0.0/koppa-windows-x64.exe
+    InstallerSha256: REPLACE_WITH_SHA256_OF_EXE
+    PortableCommandAlias: koppa

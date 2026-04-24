@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>KOPPA — Advanced Pentesting DSL</title>
+  <link rel="canonical" href="https://guea14012.github.io/koppa-lang" />
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet" />
+  <style>
+    /* ── Reset ── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* ── Palette ── */
+    :root {
+      --bg:      #0a0a12;
+      --bg2:     #12122a;
+      --green:   #00ff41;
+      --cyan:    #00e5ff;
+      --yellow:  #ffe600;
+      --pink:    #ff2d78;
+      --purple:  #b44aff;
+      --white:   #e8e8e8;
+      --muted:   #666688;
+      --border:  #2a2a5a;
+      --px: 4px; /* 1 pixel unit */
+    }
+
+    /* ── Base ── */
+    html { scroll-behavior: smooth; }
+    body {
+      background: var(--bg);
+      color: var(--white);
+      font-family: 'Press Start 2P', monospace;
+      font-size: 8px;
+      line-height: 2;
+      image-rendering: pixelated;
+      overflow-x: hidden;
+    }
+
+    /* ── CRT scanlines overlay ── */
+    body::after {
+      content: '';
+      pointer-events: none;
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0,0,0,.18) 2px,
+        rgba(0,0,0,.18) 4px
+      );
+    }
+
+    /* ── Pixel border mixin (box-shadow trick) ── */
+    .px-box {
+      border: 4px solid var(--cyan);
+      box-shadow:
+        0 0 0 4px var(--bg),
+        0 0 0 8px var(--cyan),
+        4px 4px 0 8px rgba(0,229,255,.15);
+      image-rendering: pixelated;
+    }
+    .px-box-green {
+      border: 4px solid var(--green);
+      box-shadow:
+        0 0 0 4px var(--bg),
+        0 0 0 8px var(--green),
+        4px 4px 0 8px rgba(0,255,65,.12);
+    }
+    .px-box-yellow {
+      border: 4px solid var(--yellow);
+      box-shadow:
+        0 0 0 4px var(--bg),
+        0 0 0 8px var(--yellow);
+    }
+    .px-box-pink {
+      border: 4px solid var(--pink);
+      box-shadow:
+        0 0 0 4px var(--bg),
+        0 0 0 8px var(--pink);
+    }
+
+    /* ── Nav ── */
+    nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 24px;
+      border-bottom: 4px solid var(--cyan);
+      background: var(--bg);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .nav-logo {
+      color: var(--cyan);
+      font-size: 14px;
+      letter-spacing: 4px;
+      text-shadow: 0 0 8px var(--cyan), 2px 2px 0 var(--purple);
+    }
+    .nav-logo span { color: var(--pink); }
+    nav .links { display: flex; gap: 16px; flex-wrap: wrap; }
+    nav a { color: var(--muted); text-decoration: none; font-size: 7px; transition: color .1s; }
+    nav a:hover { color: var(--yellow); }
+
+    /* ── Blink ── */
+    @keyframes blink { 0%,49%{opacity:1} 50%,100%{opacity:0} }
+    .blink { animation: blink 1s step-end infinite; }
+
+    /* ── Scanline flicker ── */
+    @keyframes flicker { 0%{opacity:1}92%{opacity:1}93%{opacity:.8}94%{opacity:1}97%{opacity:.9}100%{opacity:1} }
+    .hero-wrap { animation: flicker 6s infinite; }
+
+    /* ── Hero ── */
+    .hero-wrap {
+      max-width: 860px;
+      margin: 48px auto;
+      padding: 0 24px;
+      text-align: center;
+    }
+    .version-tag {
+      display: inline-block;
+      background: var(--bg2);
+      color: var(--yellow);
+      border: 4px solid var(--yellow);
+      padding: 4px 12px;
+      font-size: 7px;
+      margin-bottom: 24px;
+    }
+
+    /* ASCII logo */
+    .ascii-logo {
+      font-size: 7px;
+      line-height: 1.6;
+      color: var(--cyan);
+      text-shadow: 0 0 6px var(--cyan);
+      margin-bottom: 20px;
+      white-space: pre;
+      letter-spacing: 2px;
+    }
+
+    h1 {
+      font-size: 22px;
+      line-height: 1.5;
+      margin-bottom: 16px;
+      text-shadow: 3px 3px 0 var(--purple);
+    }
+    h1 .hl { color: var(--pink); text-shadow: 3px 3px 0 #7a0033; }
+
+    .hero-sub {
+      color: var(--muted);
+      font-size: 7px;
+      max-width: 500px;
+      margin: 0 auto 28px;
+      line-height: 2.2;
+    }
+
+    /* ── Pixel buttons ── */
+    .btn-row { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; margin-bottom: 32px; }
+    .px-btn {
+      display: inline-block;
+      padding: 10px 20px;
+      font-family: 'Press Start 2P', monospace;
+      font-size: 8px;
+      text-decoration: none;
+      cursor: pointer;
+      border: none;
+      image-rendering: pixelated;
+      transition: transform .08s, box-shadow .08s;
+    }
+    .px-btn:active { transform: translate(4px,4px); }
+
+    .px-btn-primary {
+      background: var(--cyan);
+      color: #000;
+      box-shadow: 4px 4px 0 #005566, 8px 8px 0 #002233;
+    }
+    .px-btn-primary:hover { box-shadow: 6px 6px 0 #005566, 10px 10px 0 #002233; transform: translate(-2px,-2px); }
+
+    .px-btn-ghost {
+      background: transparent;
+      color: var(--white);
+      border: 4px solid var(--white);
+      box-shadow: 4px 4px 0 #444;
+    }
+    .px-btn-ghost:hover { border-color: var(--yellow); color: var(--yellow); box-shadow: 4px 4px 0 #665500; transform: translate(-2px,-2px); }
+
+    /* ── Install strip ── */
+    .install-strip {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: #000;
+      border: 4px solid var(--green);
+      box-shadow: 4px 4px 0 #003300;
+      padding: 12px 16px;
+      max-width: 560px;
+      margin: 0 auto;
+    }
+    .install-strip::before {
+      content: '$ ';
+      color: var(--green);
+      flex-shrink: 0;
+    }
+    .install-strip code { color: var(--green); font-size: 8px; flex: 1; text-align: left; word-break: break-all; }
+    .copy-btn {
+      background: var(--green);
+      color: #000;
+      border: none;
+      padding: 6px 10px;
+      font-family: 'Press Start 2P', monospace;
+      font-size: 6px;
+      cursor: pointer;
+      flex-shrink: 0;
+      box-shadow: 2px 2px 0 #003300;
+    }
+    .copy-btn:hover { background: var(--yellow); }
+
+    /* ── Section wrapper ── */
+    .section { max-width: 900px; margin: 64px auto 0; padding: 0 24px; }
+    .section-title {
+      font-size: 12px;
+      color: var(--yellow);
+      text-shadow: 2px 2px 0 #664400;
+      margin-bottom: 8px;
+      text-align: center;
+    }
+    .section-title::before { content: '> '; color: var(--pink); }
+    .section-sub { text-align: center; color: var(--muted); font-size: 6px; margin-bottom: 28px; }
+
+    /* ── Platform tabs ── */
+    .ptabs { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-bottom: 24px; }
+    .ptab {
+      padding: 8px 14px;
+      font-family: 'Press Start 2P', monospace;
+      font-size: 7px;
+      cursor: pointer;
+      border: 4px solid var(--border);
+      background: var(--bg2);
+      color: var(--muted);
+      transition: all .1s;
+    }
+    .ptab:hover, .ptab.active {
+      border-color: var(--cyan);
+      color: var(--cyan);
+      background: #001a22;
+      box-shadow: 4px 4px 0 #003344;
+    }
+
+    .dl-panel { display: none; }
+    .dl-panel.active { display: flex; flex-direction: column; gap: 12px; }
+
+    /* ── Download card ── */
+    .dl-card {
+      background: var(--bg2);
+      border: 4px solid var(--border);
+      padding: 16px;
+      display: flex;
+      align-items: flex-start;
+      gap: 16px;
+      box-shadow: 4px 4px 0 #080816;
+      flex-wrap: wrap;
+    }
+    .dl-card:hover { border-color: var(--cyan); }
+    .dl-icon { font-size: 20px; flex-shrink: 0; line-height: 1; margin-top: 4px; }
+    .dl-info { flex: 1; min-width: 200px; }
+    .dl-info h3 { font-size: 8px; color: var(--cyan); margin-bottom: 8px; }
+    .dl-info p { color: var(--muted); font-size: 6px; line-height: 2.2; margin-bottom: 8px; }
+    .dl-info code {
+      display: block;
+      background: #000;
+      border-left: 4px solid var(--green);
+      padding: 8px 12px;
+      font-size: 7px;
+      color: var(--green);
+      white-space: pre;
+      overflow-x: auto;
+      line-height: 2;
+    }
+    .dl-link {
+      display: inline-block;
+      padding: 8px 14px;
+      background: var(--cyan);
+      color: #000;
+      font-family: 'Press Start 2P', monospace;
+      font-size: 6px;
+      text-decoration: none;
+      box-shadow: 3px 3px 0 #003344;
+      flex-shrink: 0;
+      align-self: flex-start;
+      margin-top: 4px;
+    }
+    .dl-link:hover { background: var(--yellow); }
+
+    /* ── Code demo ── */
+    .code-tabs { display: flex; gap: 0; margin-bottom: 0; flex-wrap: wrap; }
+    .ctab {
+      padding: 6px 14px;
+      font-family: 'Press Start 2P', monospace;
+      font-size: 6px;
+      cursor: pointer;
+      border: 4px solid var(--border);
+      border-bottom: none;
+      background: var(--bg2);
+      color: var(--muted);
+    }
+    .ctab.active { background: #000; color: var(--green); border-color: var(--green); }
+
+    .code-panel { display: none; }
+    .code-panel.active { display: block; }
+
+    pre {
+      background: #000;
+      border: 4px solid var(--green);
+      padding: 20px;
+      overflow-x: auto;
+      font-size: 7px;
+      line-height: 2.2;
+      box-shadow: 4px 4px 0 #003300;
+    }
+    .kw  { color: #ff7b72; }
+    .fn  { color: var(--purple); }
+    .str { color: var(--cyan); }
+    .num { color: var(--yellow); }
+    .cmt { color: var(--muted); }
+    .ok  { color: var(--green); }
+
+    /* ── Feature cards ── */
+    .feat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+    .feat-card {
+      background: var(--bg2);
+      border: 4px solid var(--border);
+      padding: 16px;
+      transition: border-color .1s;
+      box-shadow: 4px 4px 0 #080816;
+    }
+    .feat-card:hover { border-color: var(--pink); box-shadow: 4px 4px 0 #330011; }
+    .feat-icon { font-size: 18px; margin-bottom: 10px; }
+    .feat-card h3 { font-size: 8px; color: var(--pink); margin-bottom: 6px; }
+    .feat-card p { font-size: 6px; color: var(--muted); line-height: 2.2; }
+
+    /* ── Pixel health bar decoration ── */
+    .health-bar {
+      display: flex;
+      gap: 4px;
+      justify-content: center;
+      margin: 32px 0 0;
+    }
+    .hp { width: 12px; height: 12px; background: var(--pink); box-shadow: 0 0 4px var(--pink); }
+    .hp.empty { background: #330022; box-shadow: none; }
+
+    /* ── Footer ── */
+    footer {
+      border-top: 4px solid var(--border);
+      text-align: center;
+      padding: 32px 24px 48px;
+      color: var(--muted);
+      font-size: 6px;
+      margin-top: 64px;
+      line-height: 2.8;
+    }
+    footer a { color: var(--cyan); text-decoration: none; }
+    footer a:hover { color: var(--yellow); }
+
+    .footer-logo {
+      color: var(--cyan);
+      font-size: 10px;
+      margin-bottom: 12px;
+      display: block;
+      text-shadow: 0 0 8px var(--cyan);
+    }
+
+    /* ── Pixel star decorations ── */
+    .stars {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 0;
+      overflow: hidden;
+    }
+    .star {
+      position: absolute;
+      width: 4px;
+      height: 4px;
+      background: var(--white);
+    }
+
+    /* ensure content above stars */
+    nav, .hero-wrap, .section, footer { position: relative; z-index: 1; }
+
+    /* ── Responsive ── */
+    @media (max-width: 600px) {
+      h1 { font-size: 14px; }
+      .ascii-logo { font-size: 5px; }
+      .nav-logo { font-size: 10px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- pixel bg stars -->
+<div class="stars" aria-hidden="true" id="stars"></div>
+
+<!-- ── Nav ── -->
+<nav>
+  <span class="nav-logo">KOP<span>PA</span><span class="blink">_</span></span>
+  <div class="links">
+    <a href="#download">DOWNLOAD</a>
+    <a href="#demo">DEMO</a>
+    <a href="#features">MODULES</a>
+    <a href="https://github.com/guea14012/koppa-lang">GITHUB</a>
+    <a href="https://koppalang.co" style="color:var(--cyan)">koppalang.co</a>
+  </div>
+</nav>
+
+<!-- ── Hero ── -->
+<div class="hero-wrap">
+  <div class="version-tag">★ VERSION 2.0.0 ★</div>
+
+  <div class="ascii-logo" aria-hidden="true"> _  __  ___  ____  ____   _
+| |/ / / _ \|  _ \|  _ \ / \
+| ' / | | | | |_) | |_) / _ \
+| . \ | |_| |  __/|  __/ ___ \
+|_|\_\ \___/|_|   |_| /_/   \_\</div>
+
+  <h1>THE <span class="hl">PENTESTING</span><br>SCRIPTING LANGUAGE</h1>
+  <p class="hero-sub">
+    A domain-specific language for security professionals.<br>
+    Port scanning · Recon · Crypto · HTTP probing.<br>
+    No boilerplate. Just hack.
+  </p>
+
+  <div class="btn-row">
+    <a class="px-btn px-btn-primary" href="#download">[ DOWNLOAD ]</a>
+    <a class="px-btn px-btn-ghost" href="https://github.com/guea14012/koppa-lang">[ GITHUB ]</a>
+  </div>
+
+  <div class="install-strip">
+    <code id="install-cmd">pip install koppa-lang</code>
+    <button class="copy-btn" onclick="copyInstall()">COPY</button>
+  </div>
+
+  <div class="health-bar" aria-hidden="true">
+    <div class="hp"></div><div class="hp"></div><div class="hp"></div>
+    <div class="hp"></div><div class="hp"></div><div class="hp"></div>
+    <div class="hp"></div><div class="hp"></div><div class="hp empty"></div>
+    <div class="hp empty"></div>
+  </div>
+</div>
+
+<!-- ── Download ── -->
+<section class="section" id="download">
+  <div class="section-title">DOWNLOAD</div>
+  <p class="section-sub">SELECT YOUR PLATFORM</p>
+
+  <div class="ptabs">
+    <button class="ptab active" onclick="showPlatform('windows',this)">🪟 WINDOWS</button>
+    <button class="ptab" onclick="showPlatform('linux',this)">🐧 LINUX</button>
+    <button class="ptab" onclick="showPlatform('macos',this)">🍎 MACOS</button>
+    <button class="ptab" onclick="showPlatform('pip',this)">📦 PIP</button>
+  </div>
+
+  <!-- Windows -->
+  <div class="dl-panel active" id="panel-windows">
+    <div class="dl-card">
+      <div class="dl-icon">🪟</div>
+      <div class="dl-info">
+        <h3>WINDOWS INSTALLER (.ZIP)</h3>
+        <p>Extract the ZIP and run install.bat — adds koppa to PATH automatically.</p>
+        <code>koppa version
+koppa repl
+koppa run script.kop</code>
+      </div>
+      <a class="dl-link" href="https://github.com/guea14012/koppa-lang/releases/download/v2.0.0/KOPPA_v2.0.0.zip">DOWNLOAD .ZIP</a>
+    </div>
+    <div class="dl-card">
+      <div class="dl-icon">📦</div>
+      <div class="dl-info">
+        <h3>SCOOP</h3>
+        <p>Windows package manager — no admin required.</p>
+        <code>scoop bucket add koppa https://github.com/guea14012/scoop-koppa
+scoop install koppa</code>
+      </div>
+    </div>
+    <div class="dl-card">
+      <div class="dl-icon">🏪</div>
+      <div class="dl-info">
+        <h3>WINGET</h3>
+        <p>Built-in Windows Package Manager.</p>
+        <code>winget install KoppaLang.Koppa</code>
+      </div>
+    </div>
+  </div>
+
+  <!-- Linux -->
+  <div class="dl-panel" id="panel-linux">
+    <div class="dl-card">
+      <div class="dl-icon">⚡</div>
+      <div class="dl-info">
+        <h3>ONE-LINER (CURL)</h3>
+        <p>Installs to ~/.local/bin — run as root for system-wide.</p>
+        <code>curl -fsSL https://guea14012.github.io/koppa-lang/install.sh | sh</code>
+      </div>
+    </div>
+    <div class="dl-card">
+      <div class="dl-icon">📦</div>
+      <div class="dl-info">
+        <h3>FROM SOURCE</h3>
+        <code>git clone https://github.com/guea14012/koppa-lang.git
+cd koppa-lang
+pip install .</code>
+      </div>
+    </div>
+  </div>
+
+  <!-- macOS -->
+  <div class="dl-panel" id="panel-macos">
+    <div class="dl-card">
+      <div class="dl-icon">🍺</div>
+      <div class="dl-info">
+        <h3>HOMEBREW</h3>
+        <code>brew tap guea14012/koppa
+brew install koppa</code>
+      </div>
+    </div>
+    <div class="dl-card">
+      <div class="dl-icon">⚡</div>
+      <div class="dl-info">
+        <h3>ONE-LINER (CURL)</h3>
+        <code>curl -fsSL https://guea14012.github.io/koppa-lang/install.sh | sh</code>
+      </div>
+    </div>
+  </div>
+
+  <!-- pip -->
+  <div class="dl-panel" id="panel-pip">
+    <div class="dl-card">
+      <div class="dl-icon">🐍</div>
+      <div class="dl-info">
+        <h3>PIP — ALL PLATFORMS</h3>
+        <p>Works on Windows, Linux and macOS. Requires Python 3.8+</p>
+        <code>pip install koppa-lang</code>
+      </div>
+      <a class="dl-link" href="https://pypi.org/project/koppa-lang/" target="_blank">PYPI PAGE</a>
+    </div>
+    <div class="dl-card">
+      <div class="dl-icon">🐳</div>
+      <div class="dl-info">
+        <h3>DOCKER</h3>
+        <p>No local install needed.</p>
+        <code>docker run --rm -it ghcr.io/guea14012/koppa repl</code>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Code Demo ── -->
+<section class="section" id="demo">
+  <div class="section-title">CODE DEMO</div>
+
+  <div class="code-tabs">
+    <div class="ctab active" onclick="showCode(0,this)">PORT_SCAN.KOP</div>
+    <div class="ctab" onclick="showCode(1,this)">HASH_DEMO.KOP</div>
+    <div class="ctab" onclick="showCode(2,this)">DNS_RECON.KOP</div>
+  </div>
+
+  <div class="code-panel active">
+    <pre><span class="cmt"># Scan a host and print open ports</span>
+<span class="kw">import</span> scan, log
+
+<span class="kw">let</span> target = <span class="str">"192.168.1.1"</span>
+<span class="kw">let</span> ports  = [<span class="num">22</span>, <span class="num">80</span>, <span class="num">443</span>, <span class="num">8080</span>, <span class="num">3306</span>]
+
+log.info(<span class="str">"Scanning {target}..."</span>)
+
+<span class="kw">for</span> port <span class="kw">in</span> ports {
+    <span class="kw">if</span> scan.tcp(target, port) {
+        log.success(<span class="str">"[+] {port} OPEN — {scan.service(port)}"</span>)
+    }
+}
+
+log.info(<span class="str">"Done."</span>)</pre>
+  </div>
+  <div class="code-panel">
+    <pre><span class="cmt"># Hash and encode data</span>
+<span class="kw">import</span> crypto, log
+
+<span class="kw">let</span> secret = <span class="str">"password123"</span>
+
+log.info(<span class="str">"MD5    : {crypto.hash_md5(secret)}"</span>)
+log.info(<span class="str">"SHA256 : {crypto.hash_sha256(secret)}"</span>)
+log.info(<span class="str">"NTLM   : {crypto.hash_ntlm(secret)}"</span>)
+
+<span class="kw">let</span> b64 = crypto.encode_base64(secret)
+log.info(<span class="str">"Base64 : {b64}"</span>)
+log.info(<span class="str">"Decode : {crypto.decode_base64(b64)}"</span>)</pre>
+  </div>
+  <div class="code-panel">
+    <pre><span class="cmt"># DNS reconnaissance</span>
+<span class="kw">import</span> recon, log
+
+<span class="kw">let</span> targets = [<span class="str">"example.com"</span>, <span class="str">"google.com"</span>, <span class="str">"github.com"</span>]
+
+<span class="kw">for</span> domain <span class="kw">in</span> targets {
+    <span class="kw">let</span> ip  = recon.dns_resolve(domain)
+    <span class="kw">let</span> rev = recon.dns_reverse(ip)
+    log.info(<span class="str">"{domain}  ->  {ip}"</span>)
+    log.info(<span class="str">"  reverse: {rev}"</span>)
+}</pre>
+  </div>
+</section>
+
+<!-- ── Features ── -->
+<section class="section" id="features">
+  <div class="section-title">BUILT-IN MODULES</div>
+  <p class="section-sub">PRESS START TO HACK</p>
+  <div class="feat-grid">
+    <div class="feat-card">
+      <div class="feat-icon">🔍</div>
+      <h3>SCAN</h3>
+      <p>TCP scanning, service detection, banner grabbing.</p>
+    </div>
+    <div class="feat-card">
+      <div class="feat-icon">🌐</div>
+      <h3>RECON</h3>
+      <p>DNS resolution, reverse lookup, subnet enumeration.</p>
+    </div>
+    <div class="feat-card">
+      <div class="feat-icon">🔒</div>
+      <h3>CRYPTO</h3>
+      <p>MD5, SHA-256, SHA-512, NTLM, Base64 encoding.</p>
+    </div>
+    <div class="feat-card">
+      <div class="feat-icon">🌍</div>
+      <h3>HTTP</h3>
+      <p>GET/POST requests, header inspection, status check.</p>
+    </div>
+    <div class="feat-card">
+      <div class="feat-icon">📁</div>
+      <h3>IO</h3>
+      <p>File read/write, JSON output, path utilities.</p>
+    </div>
+    <div class="feat-card">
+      <div class="feat-icon">📦</div>
+      <h3>PKG</h3>
+      <p>Community modules via koppa pkg install.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ── Footer ── -->
+<footer>
+  <span class="footer-logo">KOPPA v2.0.0</span>
+  MIT LICENSE &nbsp;·&nbsp;
+  <a href="https://koppalang.co">koppalang.co</a> &nbsp;·&nbsp;
+  <a href="https://github.com/guea14012/koppa-lang">GITHUB</a> &nbsp;·&nbsp;
+  <a href="https://github.com/guea14012/koppa-lang/releases">RELEASES</a> &nbsp;·&nbsp;
+  <a href="https://github.com/guea14012/koppa-lang/issues">ISSUES</a>
+  <br><br>
+  BUILT FOR SECURITY PROFESSIONALS, BY SECURITY PROFESSIONALS.
+  <br>
+  <span style="color:var(--pink)">★ INSERT COIN TO CONTINUE ★</span>
+</footer>
+
+<script>
+/* ── Pixel stars ── */
+(function() {
+  const c = document.getElementById('stars');
+  for (let i = 0; i < 60; i++) {
+    const s = document.createElement('div');
+    s.className = 'star';
+    s.style.cssText = `left:${Math.random()*100}%;top:${Math.random()*100}%;
+      opacity:${.2+Math.random()*.5};
+      animation:blink ${1+Math.random()*3}s ${Math.random()*2}s step-end infinite`;
+    c.appendChild(s);
+  }
+})();
+
+/* ── Copy button ── */
+function copyInstall() {
+  navigator.clipboard.writeText(document.getElementById('install-cmd').textContent).then(() => {
+    const b = document.querySelector('.copy-btn');
+    b.textContent = 'OK!';
+    setTimeout(() => b.textContent = 'COPY', 1500);
+  });
+}
+
+/* ── Platform tabs ── */
+function showPlatform(name, el) {
+  document.querySelectorAll('.dl-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.ptab').forEach(t => t.classList.remove('active'));
+  document.getElementById('panel-' + name).classList.add('active');
+  el.classList.add('active');
+}
+
+/* ── Code tabs ── */
+function showCode(idx, el) {
+  document.querySelectorAll('.code-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.ctab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.code-panel')[idx].classList.add('active');
+  el.classList.add('active');
+}
+</script>
+</body>
+</html>

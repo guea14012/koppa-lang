@@ -1,0 +1,2 @@
+[console_scripts]
+koppa = koppa:main

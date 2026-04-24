@@ -1,0 +1,12 @@
+# KOPPA Hello World
+# Run: koppa run examples/hello.kop
+
+import log
+
+fn main() {
+    let name = "KOPPA"
+    let version = "2.0"
+
+    log.info("Hello from {name} v{version}!")
+    log.success("Language is working correctly.")
+}

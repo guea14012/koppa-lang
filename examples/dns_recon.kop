@@ -1,0 +1,23 @@
+# KOPPA DNS Recon
+# Usage: koppa run examples/dns_recon.kop
+
+import recon, log
+
+fn main() {
+    let domains = ["example.com", "google.com", "github.com"]
+
+    log.info("===== KOPPA DNS Recon =====")
+    log.info("")
+
+    for domain in domains {
+        let ip = recon.dns_resolve(domain)
+        log.info("{domain}  ->  {ip}")
+
+        if ip {
+            let reverse = recon.dns_reverse(ip)
+            log.info("  Reverse : {reverse}")
+        }
+    }
+
+    log.success("DNS recon complete!")
+}

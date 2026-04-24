@@ -1,0 +1,100 @@
+# KOPPA Standard Library - Vulnerability Scanning Module
+# High-level primitives for security assessment
+
+import http, log, report, wordlist
+
+module vuln {
+    # Check for Reflected XSS
+    fn check_xss(url, param) -> Result {
+        let payloads = [
+            "<script>alert(1)</script>",
+            "<img src=x onerror=alert(1)>",
+            "';alert(1)//",
+            "\"><script>alert(1)</script>"
+        ]
+
+        log.info("Checking XSS on {url} parameter {param}")
+
+        for payload in payloads {
+            let target_url = "{url}?{param}={payload}"
+            let response = http.get(target_url)
+
+            if response.body.contains(payload) {
+                log.warn("[!] Potential Reflected XSS found on {param} with payload: {payload}")
+                return report.finding("XSS", "High", "Reflected XSS on {param}")
+            }
+        }
+
+        return false
+    }
+
+    # Check for basic SQL Injection (Error-based)
+    fn check_sqli(url, param) -> Result {
+        let payloads = ["'", "''", "\"", "\\", "') OR 1=1--", "'; WAITFOR DELAY '0:0:5'--"]
+        let sql_errors = [
+            "SQL syntax", "mysql_fetch_array", "PostgreSQL query failed",
+            "Microsoft OLE DB Provider for SQL Server", "Oracle error",
+            "SQLite3::SQLException", "Dynamic SQL Error"
+        ]
+
+        log.info("Checking SQLi on {url} parameter {param}")
+
+        for payload in payloads {
+            let target_url = "{url}?{param}={payload}"
+            let response = http.get(target_url)
+
+            for error in sql_errors {
+                if response.body.contains(error) {
+                    log.warn("[!] Potential SQL Injection found on {param} - Error: {error}")
+                    return report.finding("SQLi", "Critical", "Error-based SQLi on {param}")
+                }
+            }
+        }
+
+        return false
+    }
+
+    # Check for LFI (Local File Inclusion)
+    fn check_lfi(url, param) -> Result {
+        let payloads = [
+            "/etc/passwd",
+            "../../../../etc/passwd",
+            "..\\..\\..\\..\\..\\..\\..\\..\\windows\\win.ini",
+            "C:\\Windows\\win.ini"
+        ]
+
+        log.info("Checking LFI on {url} parameter {param}")
+
+        for payload in payloads {
+            let target_url = "{url}?{param}={payload}"
+            let response = http.get(target_url)
+
+            if response.body.contains("root:x:0:0") || response.body.contains("[fonts]") {
+                log.warn("[!] Potential LFI found on {param} with path: {payload}")
+                return report.finding("LFI", "High", "Local File Inclusion on {param}")
+            }
+        }
+
+        return false
+    }
+
+    # Scan a URL for multiple vulnerabilities
+    fn scan_url(url, params) -> List {
+        let findings = []
+
+        for param in params {
+            let xss = check_xss(url, param)
+            if xss { findings.push(xss) }
+
+            let sqli = check_sqli(url, param)
+            if sqli { findings.push(sqli) }
+
+            let lfi = check_lfi(url, param)
+            if lfi { findings.push(lfi) }
+        }
+
+        return findings
+    }
+}
+
+export vuln

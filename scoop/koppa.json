@@ -1,0 +1,24 @@
+{
+  "version": "2.0.0",
+  "description": "Advanced Pentesting Domain-Specific Language",
+  "homepage": "https://github.com/YOUR_USERNAME/koppa-lang",
+  "license": "MIT",
+  "architecture": {
+    "64bit": {
+      "url": "https://github.com/YOUR_USERNAME/koppa-lang/releases/download/v2.0.0/koppa-windows-x64.exe",
+      "hash": "REPLACE_WITH_SHA256_OF_EXE",
+      "bin": "koppa-windows-x64.exe"
+    }
+  },
+  "bin": [["koppa-windows-x64.exe", "koppa"]],
+  "checkver": {
+    "github": "https://github.com/YOUR_USERNAME/koppa-lang"
+  },
+  "autoupdate": {
+    "architecture": {
+      "64bit": {
+        "url": "https://github.com/YOUR_USERNAME/koppa-lang/releases/download/v$version/koppa-windows-x64.exe"
+      }
+    }
+  }
+}

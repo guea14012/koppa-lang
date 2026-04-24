@@ -1,0 +1,32 @@
+# KOPPA Port Scanner — reads target from __args__
+# Usage: koppa run examples/port_scanner.kop 127.0.0.1
+
+import scan, log
+
+let COMMON_PORTS = [21, 22, 23, 25, 53, 80, 110, 135, 139, 143, 443, 445, 993, 995, 3306, 3389, 5432, 6379, 8080, 27017]
+
+fn main() {
+    let target = "127.0.0.1"
+
+    log.info("===== KOPPA Port Scanner v2.0 =====")
+    log.info("Target : {target}")
+    log.info("Ports  : {COMMON_PORTS.len} common ports")
+    log.info("")
+
+    let open_count = 0
+
+    for port in COMMON_PORTS {
+        if scan.tcp(target, port) {
+            let svc = scan.service(port)
+            log.info("[+] {port}/tcp  OPEN   {svc}")
+            open_count = open_count + 1
+        }
+    }
+
+    log.info("")
+    if open_count == 0 {
+        log.warn("No open ports found on {target}")
+    } else {
+        log.success("Found {open_count} open port(s) on {target}")
+    }
+}

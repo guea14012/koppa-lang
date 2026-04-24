@@ -1,0 +1,25 @@
+# KOPPA Web Check — HTTP GET example
+# Usage: koppa run examples/web_check.kop
+
+import http, log
+
+fn check_url(url) {
+    log.info("Checking: {url}")
+    let resp = http.get(url)
+    let status = resp.status
+    log.info("  Status  : {status}")
+    return status
+}
+
+fn main() {
+    log.info("===== KOPPA Web Checker =====")
+    log.info("")
+
+    let targets = ["http://example.com", "http://httpbin.org/status/200"]
+
+    for url in targets {
+        check_url(url)
+    }
+
+    log.success("Web check done!")
+}

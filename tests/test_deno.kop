@@ -1,0 +1,16 @@
+fn main() {
+    let target = "127.0.0.1"
+    let ports = [22, 80, 443]
+
+    log.info("Starting Deno-powered scan on " + target)
+
+    for port in ports {
+        if scan.tcp(target, port) {
+            log.info("Port " + port + " is open")
+        } else {
+            log.warn("Port " + port + " is closed")
+        }
+    }
+
+    log.success("Scan complete!")
+}

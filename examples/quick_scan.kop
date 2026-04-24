@@ -1,0 +1,37 @@
+# KOPPA Quick Port Scanner
+# Usage: koppa run examples/quick_scan.kop
+# Target is hardcoded to 127.0.0.1 — edit the script or use port_scanner.kop for CLI args
+
+import scan, log
+
+let PORTS = [21, 22, 23, 25, 53, 80, 110, 139, 143, 443, 445, 3306, 3389, 5432, 6379, 8080, 27017]
+
+fn scan_host(host, ports) {
+    let open_ports = []
+    log.info("Scanning {host}...")
+
+    for port in ports {
+        if scan.tcp(host, port) {
+            let svc = scan.service(port)
+            open_ports.push(port)
+            log.info("[+] {port}/tcp  open  ({svc})")
+        }
+    }
+
+    log.info("Scan complete: {open_ports.len} open port(s)")
+    return open_ports
+}
+
+fn main() {
+    let target = "127.0.0.1"
+
+    log.info("===== KOPPA Quick Scanner =====")
+    log.info("Target : {target}")
+    log.info("Ports  : {PORTS.len}")
+
+    let result = scan_host(target, PORTS)
+
+    if result.len == 0 {
+        log.warn("No open ports found.")
+    }
+}
