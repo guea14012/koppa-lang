@@ -1,0 +1,63 @@
+# KOPPA Core Stdlib — usage examples
+# import str, list, math, rand, time, regex, json, fs, os, color, fmt
+
+import log, str, list, math, rand, time, regex, json, fs, color, fmt
+
+fn demo_str() {
+    let s = "Hello, KOPPA World!"
+    log.info(str.upper(s))
+    log.info(str.reverse(s))
+    log.info(str.replace(s, "World", "Security"))
+    let parts = str.split(s, " ")
+    log.info("words: {parts}")
+    log.info("contains KOPPA: {str.contains(s, 'KOPPA')}")
+}
+
+fn demo_math() {
+    log.info("sqrt(144) = {math.sqrt(144)}")
+    log.info("pow(2,10) = {math.pow(2, 10)}")
+    log.info("pi = {math.pi()}")
+    log.info("gcd(48,18) = {math.gcd(48, 18)}")
+}
+
+fn demo_rand() {
+    log.info("rand int: {rand.int(1, 100)}")
+    log.info("rand uuid: {rand.uuid()}")
+    log.info("rand ip: {rand.ip()}")
+    log.info("rand ua: {rand.ua()}")
+}
+
+fn demo_time() {
+    log.info("now: {time.now()}")
+    log.info("date: {time.date()}")
+    log.info("clock: {time.clock()}")
+    log.info("ts: {time.timestamp()}")
+}
+
+fn demo_regex() {
+    let text = "Contact admin@koppa.io or root@192.168.1.1 for https://koppa.io"
+    let emails = regex.extract_emails(text)
+    let ips = regex.extract_ips(text)
+    let urls = regex.extract_urls(text)
+    log.info("emails: {emails}")
+    log.info("ips: {ips}")
+    log.info("urls: {urls}")
+}
+
+fn demo_fmt() {
+    let banner = fmt.banner("KOPPA SECURITY SCAN")
+    log.info(banner)
+    let bar = fmt.progress(75, 100)
+    log.info(bar)
+    let size = fmt.bytes(1048576)
+    log.info("size: {size}")
+}
+
+fn main() {
+    demo_str()
+    demo_math()
+    demo_rand()
+    demo_time()
+    demo_regex()
+    demo_fmt()
+}

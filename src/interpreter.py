@@ -380,6 +380,7 @@ class Interpreter:
 
     def load_builtins(self):
         """Load built-in modules"""
+        # Legacy security modules
         self.env.modules["native_recon"] = SecurityModule.recon_module()
         self.env.modules["native_scan"] = SecurityModule.scan_module()
         self.env.modules["native_enum"] = SecurityModule.enum_module()
@@ -387,17 +388,33 @@ class Interpreter:
         self.env.modules["native_crypto"] = SecurityModule.crypto_module()
         self.env.modules["native_http"] = SecurityModule.http_module()
         self.env.modules["native_io"] = SecurityModule.io_module()
-        # Extend io module with additional functions
         self.env.modules["native_io"]["file_exists"] = lambda p: RuntimeValue(Path(p).exists(), "bool")
         self.env.modules["native_io"]["read_lines"] = lambda p: RuntimeValue([RuntimeValue(l, "string") for l in Path(p).read_text().splitlines()], "array")
         self.env.modules["native_io"]["write_json"] = lambda data, p: Path(p).write_text(__import__('json').dumps(data if not isinstance(data, RuntimeValue) else data.value, indent=2, default=str)) or RuntimeValue(None, "null")
         self.env.modules["native_log"] = SecurityModule.log_module()
+
+        # Load full stdlib
+        try:
+            from stdlib_native import ALL_MODULES
+            for name, factory in ALL_MODULES.items():
+                self.env.modules[name] = factory()
+        except ImportError:
+            pass
+
         # Built-in functions
         self.env.variables["print"] = RuntimeValue(lambda *args: print(*[a if not isinstance(a, RuntimeValue) else a.value for a in args]) or None, "function")
-        self.env.variables["str"] = RuntimeValue(lambda x: RuntimeValue(str(x.value if isinstance(x, RuntimeValue) else x), "string"), "function")
-        self.env.variables["int"] = RuntimeValue(lambda x: RuntimeValue(int(x.value if isinstance(x, RuntimeValue) else x), "integer"), "function")
-        self.env.variables["len"] = RuntimeValue(lambda x: RuntimeValue(len(x.value if isinstance(x, RuntimeValue) else x), "int"), "function")
+        self.env.variables["str"]   = RuntimeValue(lambda x: RuntimeValue(str(x.value if isinstance(x, RuntimeValue) else x), "string"), "function")
+        self.env.variables["int"]   = RuntimeValue(lambda x: RuntimeValue(int(x.value if isinstance(x, RuntimeValue) else x), "integer"), "function")
+        self.env.variables["float"] = RuntimeValue(lambda x: RuntimeValue(float(x.value if isinstance(x, RuntimeValue) else x), "float"), "function")
+        self.env.variables["bool"]  = RuntimeValue(lambda x: RuntimeValue(bool(x.value if isinstance(x, RuntimeValue) else x), "bool"), "function")
+        self.env.variables["len"]   = RuntimeValue(lambda x: RuntimeValue(len(x.value if isinstance(x, RuntimeValue) else x), "int"), "function")
+        self.env.variables["type"]  = RuntimeValue(lambda x: RuntimeValue(x.value_type if isinstance(x, RuntimeValue) else type(x).__name__, "string"), "function")
         self.env.variables["range"] = RuntimeValue(lambda *args: RuntimeValue([RuntimeValue(i, "integer") for i in range(*[a.value if isinstance(a, RuntimeValue) else a for a in args])], "array"), "function")
+        self.env.variables["input"] = RuntimeValue(lambda prompt="": RuntimeValue(input(prompt.value if isinstance(prompt, RuntimeValue) else prompt), "string"), "function")
+        self.env.variables["abs"]   = RuntimeValue(lambda x: RuntimeValue(abs(x.value if isinstance(x, RuntimeValue) else x), "number"), "function")
+        self.env.variables["round"] = RuntimeValue(lambda x, n=RuntimeValue(0,'int'): RuntimeValue(round(x.value if isinstance(x, RuntimeValue) else x, n.value if isinstance(n, RuntimeValue) else n), "number"), "function")
+        self.env.variables["min"]   = RuntimeValue(lambda *args: min(args, key=lambda a: a.value if isinstance(a, RuntimeValue) else a), "function")
+        self.env.variables["max"]   = RuntimeValue(lambda *args: max(args, key=lambda a: a.value if isinstance(a, RuntimeValue) else a), "function")
 
     def execute(self, node: ASTNode) -> RuntimeValue:
         """Execute an AST node"""
@@ -519,13 +536,41 @@ class Interpreter:
         return result
 
     _MODULE_ALIASES = {
-        "log": "native_log",
-        "scan": "native_scan",
-        "crypto": "native_crypto",
-        "io": "native_io",
-        "http": "native_http",
-        "recon": "native_recon",
-        "enum": "native_enum",
+        # Legacy
+        "log":     "native_log",
+        "scan":    "native_scan",
+        "crypto":  "native_crypto",
+        "io":      "native_io",
+        "http":    "native_http",
+        "recon":   "native_recon",
+        "enum":    "native_enum",
+        "exploit": "native_exploit",
+        # Core stdlib
+        "str":     "native_str",
+        "list":    "native_list",
+        "math":    "native_math",
+        "rand":    "native_rand",
+        "time":    "native_time",
+        "regex":   "native_regex",
+        "json":    "native_json",
+        "fs":      "native_fs",
+        "os":      "native_os",
+        "color":   "native_color",
+        "fmt":     "native_fmt",
+        # Network
+        "net":     "native_net",
+        "dns":     "native_dns",
+        "ssl":     "native_ssl",
+        "smtp":    "native_smtp",
+        "ftp":     "native_ftp",
+        # Security
+        "encode":  "native_encode",
+        "hash":    "native_hash",
+        "jwt":     "native_jwt",
+        "fuzz":    "native_fuzz",
+        "brute":   "native_brute",
+        "parse":   "native_parse",
+        "report":  "native_report",
     }
 
     def execute_import(self, node: ASTNode) -> RuntimeValue:

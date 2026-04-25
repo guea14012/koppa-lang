@@ -3,7 +3,8 @@ Name: koppa-lang
 Version: 2.0.0
 Summary: KOPPA — Advanced Pentesting Domain-Specific Language
 Author: KOPPA Team
-License: MIT
+Author-email: KOPPA Team <kua.kuakun@gmail.com>
+License-Expression: MIT
 Keywords: pentesting,security,dsl,language,scripting
 Classifier: Programming Language :: Python :: 3
 Classifier: Operating System :: OS Independent

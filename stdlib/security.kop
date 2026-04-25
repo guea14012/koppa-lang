@@ -1,0 +1,64 @@
+# KOPPA Security Stdlib — usage examples
+# import encode, hash, jwt, fuzz, brute, parse, report
+
+import log, encode, hash, jwt, parse, report
+
+fn demo_encode() {
+    let secret = "koppa_secret_2026"
+    log.info("b64: {encode.b64_encode(secret)}")
+    log.info("hex: {encode.hex_encode(secret)}")
+    log.info("url: {encode.url_encode('hello world & more')}")
+    log.info("rot13: {encode.rot13(secret)}")
+    log.info("detect: {encode.detect('SGVsbG8gV29ybGQ=')}")
+}
+
+fn demo_hash() {
+    let pw = "password123"
+    log.info("md5:    {hash.md5(pw)}")
+    log.info("sha256: {hash.sha256(pw)}")
+    log.info("ntlm:   {hash.ntlm(pw)}")
+    let h = hash.sha256(pw)
+    log.info("identify: {hash.identify(h)}")
+    let finfo = hash.file("examples/hello.kop")
+    log.info("file hash: {finfo}")
+}
+
+fn demo_jwt() {
+    let token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4iLCJpYXQiOjE1MTYyMzkwMjJ9.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
+    let decoded = jwt.decode(token)
+    log.info("jwt header: {decoded}")
+    let expired = jwt.is_expired(token)
+    log.info("expired: {expired}")
+    let none = jwt.none_alg(token)
+    log.info("none-alg: {none}")
+}
+
+fn demo_parse() {
+    let html = "<html><title>Test Page</title><a href='/admin'>Admin</a><a href='/login'>Login</a><input name='user' type='text'></html>"
+    let title = parse.html_title(html)
+    let links = parse.html_links(html)
+    let inputs = parse.html_inputs(html)
+    log.info("title: {title}")
+    log.info("links: {links}")
+    log.info("inputs: {inputs}")
+}
+
+fn demo_report() {
+    let findings = [
+        report.finding("SQL Injection", "Critical", "Found in /login?id= parameter"),
+        report.finding("XSS", "High", "Reflected XSS in search parameter"),
+        report.finding("Info Disclosure", "Low", "Server version exposed in headers"),
+    ]
+    let summary = report.summary(findings)
+    log.info("summary: {summary}")
+    let terminal = report.terminal(findings)
+    log.info(terminal)
+}
+
+fn main() {
+    demo_encode()
+    demo_hash()
+    demo_jwt()
+    demo_parse()
+    demo_report()
+}

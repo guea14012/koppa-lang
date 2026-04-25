@@ -1,0 +1,59 @@
+# KOPPA Network Stdlib — usage examples
+# import net, dns, ssl, smtp, ftp
+
+import log, net, dns, ssl
+
+fn demo_net() {
+    let my_ip = net.local_ip()
+    log.info("local ip: {my_ip}")
+    let up = net.is_up("google.com")
+    log.info("google.com up: {up}")
+    let banner = net.tcp_banner("google.com", 80)
+    log.info("banner: {banner}")
+    let geo = net.geo_ip("8.8.8.8")
+    log.info("geo: {geo}")
+}
+
+fn demo_dns() {
+    let ip = dns.resolve("google.com")
+    log.info("google.com → {ip}")
+    let rev = dns.reverse(ip)
+    log.info("reverse: {rev}")
+    let all_ips = dns.resolve_all("google.com")
+    log.info("all ips: {all_ips}")
+    let wild = dns.wildcard("google.com")
+    log.info("wildcard: {wild}")
+}
+
+fn demo_ssl() {
+    let cert = ssl.get_cert("google.com")
+    log.info("cert: {cert}")
+    let fp = ssl.fingerprint("google.com")
+    log.info("fingerprint: {fp}")
+    let exp = ssl.expiry("google.com")
+    log.info("expires: {exp}")
+    let hsts = ssl.hsts("google.com")
+    log.info("hsts: {hsts}")
+    let issuer = ssl.issuer("google.com")
+    log.info("issuer: {issuer}")
+    let valid = ssl.verify("google.com")
+    log.info("valid cert: {valid}")
+}
+
+fn port_sweep(host, ports) {
+    log.info("Sweeping {host}...")
+    for port in ports {
+        let open = net.tcp_connect(host, port, 1)
+        if open {
+            let svc = net.service_name(port)
+            log.success("[+] {port}/tcp open ({svc})")
+        }
+    }
+}
+
+fn main() {
+    demo_net()
+    demo_dns()
+    demo_ssl()
+    port_sweep("127.0.0.1", [22, 80, 443, 3306, 5432, 6379, 8080])
+}
