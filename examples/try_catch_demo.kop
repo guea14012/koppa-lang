@@ -1,0 +1,48 @@
+# KOPPA try/catch demo
+# Run: koppa run examples/try_catch_demo.kop
+
+import log, fs, http
+
+fn safe_http(url) {
+    try {
+        let resp = http.get(url)
+        return resp.status
+    } catch(err) {
+        log.error("HTTP failed: {err}")
+        return 0
+    }
+}
+
+fn safe_read(path) {
+    try {
+        return fs.read(path)
+    } catch(err) {
+        log.warn("Cannot read {path}: {err}")
+        return ""
+    }
+}
+
+fn divide(a, b) {
+    if b == 0 {
+        throw "Division by zero"
+    }
+    return a / b
+}
+
+fn main() {
+    log.info("=== try/catch demo ===")
+
+    let status = safe_http("http://example.com")
+    log.info("Status: {status}")
+
+    let content = safe_read("/nonexistent/file.txt")
+    log.info("Read result: '{content}'")
+
+    try {
+        let result = divide(10, 0)
+    } catch(err) {
+        log.warn("Caught throw: {err}")
+    }
+
+    log.success("Error handling works!")
+}

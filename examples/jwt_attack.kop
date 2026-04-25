@@ -1,0 +1,33 @@
+# KOPPA JWT Attack Demo
+# Run: koppa run examples/jwt_attack.kop
+
+import jwt, log
+
+fn main() {
+    let token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
+
+    log.info("=== JWT Analysis ===")
+
+    let decoded = jwt.decode(token)
+    log.info("Decoded: {decoded}")
+
+    let expired = jwt.is_expired(token)
+    log.info("Expired: {expired}")
+
+    let none = jwt.none_alg(token)
+    log.info("None-alg: {none}")
+
+    log.info("")
+    log.info("=== Crack attempt ===")
+    let wordlist = ["secret", "password", "koppa", "12345", "admin"]
+    let result = jwt.crack(token, wordlist)
+    log.info("Crack result: {result}")
+
+    log.info("")
+    log.info("=== Forge token ===")
+    let payload = {"sub": "admin", "role": "superuser", "iat": 1700000000}
+    let forged = jwt.forge(payload, "")
+    log.info("Forged (none): {forged}")
+
+    log.success("JWT attack demo complete!")
+}

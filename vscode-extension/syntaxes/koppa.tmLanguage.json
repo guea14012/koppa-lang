@@ -1,0 +1,101 @@
+{
+  "name": "KOPPA",
+  "scopeName": "source.koppa",
+  "fileTypes": ["kop", "apo"],
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#string" },
+    { "include": "#keyword" },
+    { "include": "#type" },
+    { "include": "#function-def" },
+    { "include": "#number" },
+    { "include": "#operator" },
+    { "include": "#builtin-module" },
+    { "include": "#identifier" }
+  ],
+  "repository": {
+    "comment": {
+      "name": "comment.line.number-sign.koppa",
+      "match": "#.*$"
+    },
+    "string": {
+      "name": "string.quoted.double.koppa",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        {
+          "name": "variable.other.interpolated.koppa",
+          "match": "\\{[\\w\\.]+\\}"
+        },
+        {
+          "name": "constant.character.escape.koppa",
+          "match": "\\\\."
+        }
+      ]
+    },
+    "keyword": {
+      "patterns": [
+        {
+          "name": "keyword.control.koppa",
+          "match": "\\b(if|elif|else|for|while|in|match|return|try|catch|throw|break|continue)\\b"
+        },
+        {
+          "name": "keyword.declaration.koppa",
+          "match": "\\b(fn|async|await|let|var|const|import|export|module|extern|class|struct)\\b"
+        },
+        {
+          "name": "keyword.operator.koppa",
+          "match": "\\b(and|or|not|parallel|emit|default)\\b"
+        },
+        {
+          "name": "constant.language.koppa",
+          "match": "\\b(true|false|null|None|Ok|Err|Some)\\b"
+        }
+      ]
+    },
+    "type": {
+      "name": "entity.name.type.koppa",
+      "match": "\\b(Result|Stream|Option|List|Dict|String|Int|Float|Bool|Any)\\b"
+    },
+    "function-def": {
+      "patterns": [
+        {
+          "name": "entity.name.function.koppa",
+          "match": "(?<=fn\\s)([a-zA-Z_][a-zA-Z0-9_]*)"
+        },
+        {
+          "name": "entity.name.function.call.koppa",
+          "match": "([a-zA-Z_][a-zA-Z0-9_]*)(?=\\s*\\()"
+        }
+      ]
+    },
+    "number": {
+      "patterns": [
+        {
+          "name": "constant.numeric.float.koppa",
+          "match": "\\b[0-9]+\\.[0-9]+\\b"
+        },
+        {
+          "name": "constant.numeric.integer.koppa",
+          "match": "\\b[0-9]+\\b"
+        },
+        {
+          "name": "constant.numeric.hex.koppa",
+          "match": "\\b0x[0-9a-fA-F]+\\b"
+        }
+      ]
+    },
+    "operator": {
+      "name": "keyword.operator.koppa",
+      "match": "(\\|>|->|=>|==|!=|<=|>=|&&|\\|\\||[+\\-*/%<>!]|=)"
+    },
+    "builtin-module": {
+      "name": "support.class.koppa",
+      "match": "\\b(log|scan|net|dns|ssl|http|ftp|smtp|recon|enum|fuzz|brute|parse|report|hash|encode|crypto|jwt|str|list|math|rand|regex|json|fs|os|time|fmt|color|io|exploit)(?=\\.)"
+    },
+    "identifier": {
+      "name": "variable.other.koppa",
+      "match": "[a-zA-Z_][a-zA-Z0-9_]*"
+    }
+  }
+}

@@ -1,0 +1,54 @@
+# KOPPA Web Security Audit
+# Run: koppa run examples/web_audit.kop
+
+import http, parse, ssl, fuzz, report, log
+
+fn audit_headers(url) {
+    log.info("Checking headers: {url}")
+    let resp = http.get(url)
+    let headers = resp.headers
+
+    let findings = []
+
+    let body = resp.body
+    let title = parse.html_title(body)
+    log.info("  Title: {title}")
+    log.info("  Status: {resp.status}")
+
+    return findings
+}
+
+fn audit_ssl(host) {
+    log.info("Checking SSL: {host}")
+
+    let valid = ssl.verify(host)
+    let expiry = ssl.expiry(host, 443)
+    let issuer = ssl.issuer(host, 443)
+    let fp = ssl.fingerprint(host, 443)
+
+    log.info("  Valid: {valid}")
+    log.info("  Expires: {expiry}")
+    log.info("  Issuer: {issuer}")
+    log.info("  SHA256: {fp}")
+}
+
+fn main() {
+    let target = "example.com"
+    let url = "http://{target}"
+
+    log.info("=== KOPPA Web Audit ===")
+    log.info("Target: {target}")
+    log.info("")
+
+    audit_headers(url)
+    log.info("")
+
+    try {
+        audit_ssl(target)
+    } catch(err) {
+        log.warn("SSL check failed: {err}")
+    }
+
+    log.info("")
+    log.success("Audit complete!")
+}

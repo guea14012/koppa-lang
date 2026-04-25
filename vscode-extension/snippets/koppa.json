@@ -1,0 +1,91 @@
+{
+  "Function": {
+    "prefix": "fn",
+    "body": ["fn ${1:name}(${2:args}) {", "\t$0", "}"],
+    "description": "Define a function"
+  },
+  "Async Function": {
+    "prefix": "afn",
+    "body": ["async fn ${1:name}(${2:args}) {", "\t$0", "}"],
+    "description": "Define an async function"
+  },
+  "Import": {
+    "prefix": "imp",
+    "body": ["import ${1:log}"],
+    "description": "Import a module"
+  },
+  "Let binding": {
+    "prefix": "let",
+    "body": ["let ${1:name} = ${2:value}"],
+    "description": "Immutable variable"
+  },
+  "For loop": {
+    "prefix": "for",
+    "body": ["for ${1:item} in ${2:list} {", "\t$0", "}"],
+    "description": "For loop"
+  },
+  "If statement": {
+    "prefix": "if",
+    "body": ["if ${1:condition} {", "\t$0", "}"],
+    "description": "If statement"
+  },
+  "Try/Catch": {
+    "prefix": "try",
+    "body": ["try {", "\t$1", "} catch(${2:err}) {", "\tlog.error(\"{${2:err}}\")", "}"],
+    "description": "Try/catch block"
+  },
+  "Match": {
+    "prefix": "match",
+    "body": ["match ${1:value} {", "\t\"${2:case}\" => ${3:result},", "\t_ => ${4:default}", "}"],
+    "description": "Match expression"
+  },
+  "Port scan": {
+    "prefix": "portscan",
+    "body": [
+      "import scan, log",
+      "",
+      "let target = \"${1:127.0.0.1}\"",
+      "let ports = [${2:22, 80, 443}]",
+      "",
+      "for port in ports {",
+      "\tif scan.tcp(target, port) {",
+      "\t\tlog.success(\"[+] {port} open\")",
+      "\t}",
+      "}"
+    ],
+    "description": "Port scanner template"
+  },
+  "HTTP check": {
+    "prefix": "httpcheck",
+    "body": [
+      "import http, log",
+      "",
+      "let resp = http.get(\"${1:https://example.com}\")",
+      "log.info(\"Status: {resp.status}\")",
+      "log.info(\"Body: {resp.body}\")"
+    ],
+    "description": "HTTP GET template"
+  },
+  "Hash demo": {
+    "prefix": "hashit",
+    "body": [
+      "import hash, log",
+      "",
+      "let data = \"${1:password}\"",
+      "log.info(\"MD5    : {hash.md5(data)}\")",
+      "log.info(\"SHA256 : {hash.sha256(data)}\")",
+      "log.info(\"NTLM   : {hash.ntlm(data)}\")"
+    ],
+    "description": "Hash template"
+  },
+  "Report finding": {
+    "prefix": "finding",
+    "body": ["report.finding(\"${1:title}\", \"${2:High}\", \"${3:description}\")"],
+    "description": "Create a report finding"
+  },
+  "Parallel block": {
+    "prefix": "parallel",
+    "body": ["parallel {", "\t$0", "}"],
+    "description": "Parallel execution block"
+  }
+}

@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: koppa-lang
-Version: 2.0.0
+Version: 2.0.1
 Summary: KOPPA — Advanced Pentesting Domain-Specific Language
 Author: KOPPA Team
 Author-email: KOPPA Team <kua.kuakun@gmail.com>
@@ -16,10 +16,6 @@ Dynamic: author
 Dynamic: requires-python
 
 # KOPPA Language
-
-<p align="center">
-  <img src="koppa logo.png" width="200" alt="KOPPA Logo">
-</p>
 
 **AP**hysical **P**enetration **O**peration **L**anguage & **L**ogic **O**ptimizer
 

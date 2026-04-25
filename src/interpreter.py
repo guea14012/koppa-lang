@@ -11,6 +11,8 @@ import socket
 import re
 import json
 import hashlib
+import threading
+import concurrent.futures
 from pathlib import Path
 
 from parser import ASTNode, ASTNodeType, parse
@@ -497,6 +499,24 @@ class Interpreter:
                 result_dict[key] = val
             return RuntimeValue(result_dict, "dict")
 
+        if node.node_type == ASTNodeType.TRY_CATCH:
+            return self.execute_try_catch(node)
+
+        if node.node_type == ASTNodeType.THROW:
+            return self.execute_throw(node)
+
+        if node.node_type == ASTNodeType.ASYNC_FUNCTION:
+            return self.execute_async_function(node)
+
+        if node.node_type == ASTNodeType.AWAIT:
+            return self.execute_await(node)
+
+        if node.node_type == ASTNodeType.PARALLEL:
+            return self.execute_parallel(node)
+
+        if node.node_type == ASTNodeType.EMIT:
+            return self.execute_emit(node)
+
         raise InterpreterError(f"Unknown node type: {node.node_type}")
 
     def execute_module(self, node: ASTNode) -> RuntimeValue:
@@ -506,7 +526,7 @@ class Interpreter:
 
         for child in node.children:
             result = self.execute(child)
-            if child.node_type == ASTNodeType.FUNCTION:
+            if child.node_type in (ASTNodeType.FUNCTION, ASTNodeType.ASYNC_FUNCTION):
                 functions[child.value] = result
                 # Also register in environment for calling
                 self.env.variables[child.value] = result
@@ -751,6 +771,31 @@ class Interpreter:
                     return RuntimeValue([x for x in obj.value if fn(x).value], "array")
                 return RuntimeValue(where_fn, "method")
 
+        # Object instance method/field access
+        if obj.value_type == "object" and isinstance(obj.value, dict):
+            methods = obj.value.get("__methods__", {})
+            if member_name in methods:
+                method = methods[member_name]
+                def make_bound(m, o):
+                    def bound(*args):
+                        old_env = self.env
+                        self.env = Environment(parent=m.get("env", old_env))
+                        self.env.set("self", o)
+                        for param, arg in zip(m.get("params", [])[1:], args):
+                            self.env.set(param["name"], arg)
+                        try:
+                            result = self.execute(m["body"])
+                        except ReturnException as e:
+                            result = e.value
+                        finally:
+                            self.env = old_env
+                        return result
+                    return bound
+                return RuntimeValue(make_bound(method, obj), "method")
+            if member_name in obj.value:
+                v = obj.value[member_name]
+                return v if isinstance(v, RuntimeValue) else RuntimeValue(v, "any")
+
         # Dict member access (also covers http_response, exec_result, etc. whose value is a dict)
         if isinstance(obj.value, dict):
             if member_name in obj.value:
@@ -790,7 +835,7 @@ class Interpreter:
         func = self.execute(node.value)
         args = [self.execute(arg) for arg in node.children]
 
-        if func.value_type == "function":
+        if func.value_type in ("function", "async_function"):
             func_data = func.value
             old_env = self.env
             self.env = Environment(parent=func_data.get("env", self.env))
@@ -934,6 +979,137 @@ class Interpreter:
         if isinstance(node, ASTNode):
             return self.execute(node)
         return RuntimeValue(node, "any")
+
+    # ── try/catch ────────────────────────────────────────────────────────────
+
+    def execute_try_catch(self, node: ASTNode) -> RuntimeValue:
+        """Execute try/catch block"""
+        try_block = node.value
+        catch_block = node.children[0] if node.children else None
+        catch_var = node.meta.get("catch_var")
+        try:
+            return self.execute(try_block)
+        except ReturnException:
+            raise
+        except InterpreterError as e:
+            if catch_block:
+                old_env = self.env
+                self.env = Environment(parent=old_env)
+                if catch_var:
+                    self.env.set(catch_var, RuntimeValue(str(e), "string"))
+                try:
+                    result = self.execute(catch_block)
+                finally:
+                    self.env = old_env
+                return result
+            return RuntimeValue(None, "null")
+        except Exception as e:
+            if catch_block:
+                old_env = self.env
+                self.env = Environment(parent=old_env)
+                if catch_var:
+                    self.env.set(catch_var, RuntimeValue(str(e), "string"))
+                try:
+                    result = self.execute(catch_block)
+                finally:
+                    self.env = old_env
+                return result
+            return RuntimeValue(None, "null")
+
+    def execute_throw(self, node: ASTNode) -> RuntimeValue:
+        """Execute throw statement"""
+        msg = self.execute(node.value) if node.value else RuntimeValue("Error", "string")
+        raise InterpreterError(str(msg.value if isinstance(msg, RuntimeValue) else msg))
+
+    # ── async / parallel ─────────────────────────────────────────────────────
+
+    def execute_async_function(self, node: ASTNode) -> RuntimeValue:
+        """Register async function — same as regular function, runs concurrently when awaited"""
+        func = {
+            "params": node.meta.get("params", []),
+            "body":   node.meta.get("body"),
+            "return_type": node.meta.get("return_type"),
+            "env":    self.env,
+            "async":  True,
+        }
+        return RuntimeValue(func, "async_function")
+
+    def execute_await(self, node: ASTNode) -> RuntimeValue:
+        """Execute await — run async function and wait for result"""
+        val = self.execute(node.value) if node.value else RuntimeValue(None, "null")
+        if isinstance(val, RuntimeValue) and val.value_type == "future":
+            future = val.value
+            if hasattr(future, 'result'):
+                try:
+                    return future.result(timeout=30)
+                except Exception as e:
+                    return RuntimeValue({"error": str(e)}, "dict")
+        return val
+
+    def execute_parallel(self, node: ASTNode) -> RuntimeValue:
+        """Execute parallel block — run child statements concurrently"""
+        results = []
+        body = node.children[0] if node.children else node.value
+        if not body:
+            return RuntimeValue(results, "array")
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
+            stmts = body.children if hasattr(body, 'children') else [body]
+            futures = []
+            for stmt in stmts:
+                interp = Interpreter()
+                interp.env = Environment(parent=self.env)
+                futures.append(executor.submit(interp.execute, stmt))
+            for f in concurrent.futures.as_completed(futures, timeout=60):
+                try:
+                    results.append(f.result())
+                except Exception:
+                    pass
+
+        return RuntimeValue(results, "array")
+
+    def execute_emit(self, node: ASTNode) -> RuntimeValue:
+        """Execute emit — yield a value from async stream"""
+        val = self.execute(node.value) if node.value else RuntimeValue(None, "null")
+        print(f"\033[36m[EMIT]\033[0m {val.value if isinstance(val, RuntimeValue) else val}")
+        return val
+
+    # ── class system ─────────────────────────────────────────────────────────
+
+    def execute_class(self, name: str, methods: dict, fields: dict) -> RuntimeValue:
+        """Create a class definition"""
+        cls = {
+            "__class__": name,
+            "__methods__": methods,
+            "__fields__": fields,
+        }
+        constructor = RuntimeValue(cls, "class")
+        self.env.set(name, constructor)
+        return constructor
+
+    def instantiate_class(self, cls_val: RuntimeValue, args: list) -> RuntimeValue:
+        """Create a class instance"""
+        cls = cls_val.value
+        instance = {
+            "__instance__": cls["__class__"],
+            "__methods__": cls["__methods__"],
+        }
+        for k, v in cls.get("__fields__", {}).items():
+            instance[k] = v
+        obj = RuntimeValue(instance, "object")
+        if "__init__" in cls["__methods__"]:
+            init = cls["__methods__"]["__init__"]
+            old_env = self.env
+            self.env = Environment(parent=init.get("env", old_env))
+            self.env.set("self", obj)
+            for param, arg in zip(init.get("params", [])[1:], args):
+                self.env.set(param["name"], arg)
+            try:
+                self.execute(init["body"])
+            except ReturnException:
+                pass
+            self.env = old_env
+        return obj
 
 
 def interpret(source: str) -> RuntimeValue:

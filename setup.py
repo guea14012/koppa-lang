@@ -10,7 +10,7 @@ long_description = (Path(__file__).parent / "README.md").read_text(encoding="utf
 
 setup(
     name="koppa-lang",
-    version="2.0.0",
+    version="2.0.1",
     description="KOPPA — Advanced Pentesting Domain-Specific Language",
     long_description=long_description,
     long_description_content_type="text/markdown",

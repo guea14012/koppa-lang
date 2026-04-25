@@ -1,9 +1,5 @@
 # KOPPA Language
 
-<p align="center">
-  <img src="koppa logo.png" width="200" alt="KOPPA Logo">
-</p>
-
 **AP**hysical **P**enetration **O**peration **L**anguage & **L**ogic **O**ptimizer
 
 A domain-specific programming language designed for security professionals and penetration testers.

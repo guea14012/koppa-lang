@@ -1,31 +1,32 @@
 {
-    "name": "koppa-lang",
-    "displayName": "KOPPA Language Support",
-    "description": "Cybersecurity Programming Language KOPPA",
-    "version": "1.0.0",
-    "publisher": "Korku",
-    "engines": {
-        "vscode": "^1.50.0"
-    },
-    "categories": [
-        "Programming Languages"
-    ],
-    "contributes": {
-        "languages": [{
-            "id": "koppa",
-            "aliases": ["KOPPA", "koppa"],
-            "extensions": [".kop", ".apo"],
-            "configuration": "./language-configuration.json"
-        }],
-        "grammars": [{
-            "language": "koppa",
-            "scopeName": "source.koppa",
-            "path": "./syntaxes/koppa.tmLanguage.json"
-        }],
-        "iconThemes": [{
-            "id": "koppa-icons",
-            "label": "KOPPA Icons",
-            "path": "./icons/icon-theme.json"
-        }]
-    }
+  "name": "koppa-lang",
+  "displayName": "KOPPA Language Support",
+  "description": "Syntax highlighting and snippets for KOPPA — Advanced Pentesting DSL",
+  "version": "2.0.1",
+  "publisher": "guea14012",
+  "repository": { "type": "git", "url": "https://github.com/guea14012/koppa-lang" },
+  "homepage": "https://guea14012.github.io/koppa-lang",
+  "license": "MIT",
+  "engines": { "vscode": "^1.75.0" },
+  "categories": ["Programming Languages", "Snippets"],
+  "keywords": ["koppa", "pentest", "security", "dsl"],
+  "activationEvents": [],
+  "main": "",
+  "contributes": {
+    "languages": [{
+      "id": "koppa",
+      "aliases": ["KOPPA", "koppa"],
+      "extensions": [".kop", ".apo"],
+      "configuration": "./language-configuration.json"
+    }],
+    "grammars": [{
+      "language": "koppa",
+      "scopeName": "source.koppa",
+      "path": "./syntaxes/koppa.tmLanguage.json"
+    }],
+    "snippets": [{
+      "language": "koppa",
+      "path": "./snippets/koppa.json"
+    }]
+  }
 }
