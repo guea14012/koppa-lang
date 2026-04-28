@@ -1,12 +1,12 @@
 """
-APOLLO Language Parser
+KOPPA Language Parser
 Builds an Abstract Syntax Tree (AST) from tokens
 """
 
 from dataclasses import dataclass, field
 from typing import List, Optional, Any, Dict
 from enum import Enum, auto
-from lexer import Token, TokenType, tokenize
+from lexer import Token, TokenType, tokenize  # TokenType now includes BREAK/CONTINUE/compound-assigns
 
 
 class ASTNodeType(Enum):
@@ -54,6 +54,21 @@ class ASTNodeType(Enum):
     BLOCK = auto()
     TRY_CATCH = auto()
     THROW = auto()
+    BREAK = auto()
+    CONTINUE = auto()
+
+    # New node types
+    CLASS = auto()
+    NEW = auto()
+    TERNARY = auto()
+    COMPREHENSION_LIST = auto()
+    COMPREHENSION_DICT = auto()
+    OPTIONAL_CHAIN = auto()
+    NULL_COALESCE = auto()
+    SPREAD = auto()
+    TUPLE = auto()
+    DESTRUCTURE = auto()
+    UNSAFE_BLOCK = auto()
 
 
 @dataclass
@@ -150,6 +165,8 @@ class Parser:
                 statements.append(self.parse_module_decl())
             elif self.match(TokenType.LET, TokenType.VAR, TokenType.CONST):
                 statements.append(self.parse_variable())
+            elif self.match(TokenType.CLASS):
+                statements.append(self.parse_class())
             else:
                 statements.append(self.parse_statement())
 
@@ -210,8 +227,28 @@ class Parser:
         self.expect(TokenType.RBRACE)
         return ASTNode(ASTNodeType.MODULE, name, body)
 
+    def parse_class(self) -> ASTNode:
+        """Parse class definition: class Name { fn methods... }"""
+        self.expect(TokenType.CLASS)
+        name = self.expect(TokenType.IDENTIFIER).value
+
+        self.expect(TokenType.LBRACE)
+        methods = []
+
+        while self.current_token and not self.match(TokenType.RBRACE, TokenType.EOF):
+            self.skip(TokenType.NEWLINE, TokenType.INDENT, TokenType.DEDENT, TokenType.COMMENT)
+            if self.match(TokenType.RBRACE):
+                break
+            if self.match(TokenType.FN):
+                methods.append(self.parse_function())
+            else:
+                self.advance()  # skip unknown tokens
+
+        self.expect(TokenType.RBRACE)
+        return ASTNode(ASTNodeType.CLASS, name, methods, {"methods": methods})
+
     def parse_function(self) -> ASTNode:
-        """Parse function declaration"""
+        """Parse function declaration with default params and variadic support"""
         is_async = bool(self.match(TokenType.ASYNC))
         if is_async:
             self.advance()
@@ -224,7 +261,15 @@ class Parser:
         params = []
 
         while self.current_token and not self.match(TokenType.RPAREN, TokenType.EOF):
-            if self.match(TokenType.IDENTIFIER):
+            # Variadic: *args
+            if self.match(TokenType.STAR):
+                self.advance()  # consume *
+                param_name = self.expect(TokenType.IDENTIFIER).value
+                params.append({"name": param_name, "variadic": True})
+                self.skip(TokenType.COMMA)
+                continue
+
+            if self.match(TokenType.IDENTIFIER, TokenType.SELF):
                 param_name = self.advance().value
                 param_type = None
 
@@ -233,7 +278,14 @@ class Parser:
                     if self.match(TokenType.IDENTIFIER):
                         param_type = self.advance().value
 
-                params.append({"name": param_name, "type": param_type})
+                param = {"name": param_name, "type": param_type}
+
+                # Default value
+                if self.match(TokenType.ASSIGN):
+                    self.advance()
+                    param["default"] = self.parse_expression()
+
+                params.append(param)
 
             self.skip(TokenType.COMMA)
 
@@ -277,7 +329,7 @@ class Parser:
         return ASTNode(ASTNodeType.IDENTIFIER, "unknown")
 
     def parse_variable(self) -> ASTNode:
-        """Parse variable declaration"""
+        """Parse variable declaration, with destructuring support"""
         if self.match(TokenType.LET):
             mutability = "immutable"
         elif self.match(TokenType.VAR):
@@ -288,6 +340,20 @@ class Parser:
             raise ParseError("Expected variable declaration", self.current_token)
 
         self.advance()
+
+        # Destructuring: let (a, b) = expr
+        if self.match(TokenType.LPAREN):
+            self.advance()
+            names = []
+            while self.current_token and not self.match(TokenType.RPAREN, TokenType.EOF):
+                if self.match(TokenType.IDENTIFIER):
+                    names.append(self.advance().value)
+                self.skip(TokenType.COMMA)
+            self.expect(TokenType.RPAREN)
+            self.expect(TokenType.ASSIGN)
+            value = self.parse_expression()
+            return ASTNode(ASTNodeType.DESTRUCTURE, names, [value], {"mutability": mutability})
+
         name = self.expect(TokenType.IDENTIFIER).value
 
         var_type = None
@@ -331,6 +397,9 @@ class Parser:
 
     def parse_statement(self) -> ASTNode:
         """Parse a single statement"""
+        if self.match(TokenType.IMPORT):
+            return self.parse_import()
+
         if self.match(TokenType.LET, TokenType.VAR, TokenType.CONST):
             return self.parse_variable()
 
@@ -364,8 +433,22 @@ class Parser:
         if self.match(TokenType.THROW):
             return self.parse_throw()
 
+        if self.match(TokenType.BREAK):
+            self.advance()
+            return ASTNode(ASTNodeType.BREAK)
+
+        if self.match(TokenType.CONTINUE):
+            self.advance()
+            return ASTNode(ASTNodeType.CONTINUE)
+
         if self.match(TokenType.FN):
             return self.parse_function()
+
+        if self.match(TokenType.CLASS):
+            return self.parse_class()
+
+        if self.match(TokenType.UNSAFE):
+            return self.parse_unsafe_block()
 
         # Expression statement
         expr = self.parse_expression()
@@ -441,19 +524,37 @@ class Parser:
         return self.parse_expression()
 
     def parse_for(self) -> ASTNode:
-        """Parse for loop"""
+        """Parse for loop with optional tuple destructuring and for...else"""
         self.expect(TokenType.FOR)
-        var_name = self.expect(TokenType.IDENTIFIER).value
+
+        # Support for (key, val) in iterable
+        if self.match(TokenType.LPAREN):
+            self.advance()
+            names = []
+            while self.current_token and not self.match(TokenType.RPAREN, TokenType.EOF):
+                if self.match(TokenType.IDENTIFIER):
+                    names.append(self.advance().value)
+                self.skip(TokenType.COMMA)
+            self.expect(TokenType.RPAREN)
+            var_name = tuple(names)
+        else:
+            var_name = self.expect(TokenType.IDENTIFIER).value
 
         self.expect(TokenType.IN)
         iterable = self.parse_expression()
         body = self.parse_block()
 
+        # for...else
+        else_block = None
+        if self.match(TokenType.ELSE):
+            self.advance()
+            else_block = self.parse_block()
+
         return ASTNode(
             ASTNodeType.FOR,
             var_name,
             [iterable, body],
-            {"iterable": iterable}
+            {"iterable": iterable, "else_block": else_block}
         )
 
     def parse_while(self) -> ASTNode:
@@ -515,6 +616,12 @@ class Parser:
             {"catch_var": catch_var}
         )
 
+    def parse_unsafe_block(self) -> ASTNode:
+        """Parse unsafe { ... } block — marks code as requiring OS-level privileges"""
+        self.expect(TokenType.UNSAFE)
+        body = self.parse_block()
+        return ASTNode(ASTNodeType.UNSAFE_BLOCK, None, [body])
+
     def parse_throw(self) -> ASTNode:
         """Parse throw statement"""
         self.expect(TokenType.THROW)
@@ -527,11 +634,11 @@ class Parser:
 
     def parse_pipeline(self) -> ASTNode:
         """Parse pipeline expression (|> operator)"""
-        expr = self.parse_assignment()
+        expr = self.parse_ternary()
 
         while self.match(TokenType.PIPE):
             self.advance()
-            next_expr = self.parse_assignment()
+            next_expr = self.parse_ternary()
 
             # Lambda handling for pipeline
             if next_expr.node_type == ASTNodeType.CALL:
@@ -541,59 +648,152 @@ class Parser:
 
         return expr
 
+    def parse_ternary(self) -> ASTNode:
+        """Parse ternary expression: cond ? then : else"""
+        expr = self.parse_assignment()
+
+        if self.match(TokenType.QUESTION):
+            self.advance()
+            then_expr = self.parse_expression()
+            self.expect(TokenType.COLON)
+            else_expr = self.parse_ternary()
+            return ASTNode(ASTNodeType.TERNARY, None, [expr, then_expr, else_expr])
+
+        return expr
+
     def parse_assignment(self) -> ASTNode:
-        """Parse assignment expression"""
-        expr = self.parse_or()
+        """Parse assignment expression (=, +=, -=, *=, /=, %=)"""
+        expr = self.parse_null_coalesce()
 
         if self.match(TokenType.ASSIGN):
             self.advance()
             value = self.parse_assignment()
             return ASTNode(ASTNodeType.BINARY_OP, "=", [expr, value])
 
+        _COMPOUND = {
+            TokenType.PLUS_ASSIGN:    "+=",
+            TokenType.MINUS_ASSIGN:   "-=",
+            TokenType.STAR_ASSIGN:    "*=",
+            TokenType.SLASH_ASSIGN:   "/=",
+            TokenType.PERCENT_ASSIGN: "%=",
+        }
+        if self.current_token and self.current_token.type in _COMPOUND:
+            op = _COMPOUND[self.advance().type]
+            value = self.parse_assignment()
+            return ASTNode(ASTNodeType.BINARY_OP, op, [expr, value])
+
+        return expr
+
+    def parse_null_coalesce(self) -> ASTNode:
+        """Parse null coalescing operator ?:"""
+        expr = self.parse_or()
+
+        while self.match(TokenType.NULL_COALESCE):
+            self.advance()
+            right = self.parse_or()
+            expr = ASTNode(ASTNodeType.NULL_COALESCE, None, [expr, right])
+
         return expr
 
     def parse_or(self) -> ASTNode:
-        """Parse logical OR"""
+        """Parse logical OR  ||"""
         expr = self.parse_and()
-
         while self.match(TokenType.OR):
             self.advance()
             right = self.parse_and()
             expr = ASTNode(ASTNodeType.BINARY_OP, "||", [expr, right])
-
         return expr
 
     def parse_and(self) -> ASTNode:
-        """Parse logical AND"""
-        expr = self.parse_equality()
-
+        """Parse logical AND  &&"""
+        expr = self.parse_bitwise_or()
         while self.match(TokenType.AND):
             self.advance()
-            right = self.parse_equality()
+            right = self.parse_bitwise_or()
             expr = ASTNode(ASTNodeType.BINARY_OP, "&&", [expr, right])
+        return expr
 
+    def parse_bitwise_or(self) -> ASTNode:
+        """Parse bitwise OR  |"""
+        expr = self.parse_bitwise_xor()
+        while self.match(TokenType.BOR):
+            self.advance()
+            right = self.parse_bitwise_xor()
+            expr = ASTNode(ASTNodeType.BINARY_OP, "|", [expr, right])
+        return expr
+
+    def parse_bitwise_xor(self) -> ASTNode:
+        """Parse bitwise XOR  ^"""
+        expr = self.parse_bitwise_and()
+        while self.match(TokenType.BXOR):
+            self.advance()
+            right = self.parse_bitwise_and()
+            expr = ASTNode(ASTNodeType.BINARY_OP, "^", [expr, right])
+        return expr
+
+    def parse_bitwise_and(self) -> ASTNode:
+        """Parse bitwise AND  &"""
+        expr = self.parse_equality()
+        while self.match(TokenType.BAND):
+            self.advance()
+            right = self.parse_equality()
+            expr = ASTNode(ASTNodeType.BINARY_OP, "&", [expr, right])
         return expr
 
     def parse_equality(self) -> ASTNode:
         """Parse equality operators"""
         expr = self.parse_comparison()
-
         while self.match(TokenType.EQ, TokenType.NEQ):
             op = self.advance().value
             right = self.parse_comparison()
             expr = ASTNode(ASTNodeType.BINARY_OP, op, [expr, right])
-
         return expr
 
     def parse_comparison(self) -> ASTNode:
-        """Parse comparison operators"""
-        expr = self.parse_additive()
+        """Parse comparison operators, including 'in', 'not in', 'is', 'is not'"""
+        expr = self.parse_shift()
 
-        while self.match(TokenType.LT, TokenType.GT, TokenType.LTE, TokenType.GTE):
+        while True:
+            if self.match(TokenType.LT, TokenType.GT, TokenType.LTE, TokenType.GTE):
+                op = self.advance().value
+                right = self.parse_shift()
+                expr = ASTNode(ASTNodeType.BINARY_OP, op, [expr, right])
+            elif self.match(TokenType.IN):
+                self.advance()
+                right = self.parse_shift()
+                expr = ASTNode(ASTNodeType.BINARY_OP, "in", [expr, right])
+            elif self.match(TokenType.NOT):
+                saved_pos = self.pos
+                self.advance()
+                if self.match(TokenType.IN):
+                    self.advance()
+                    right = self.parse_shift()
+                    expr = ASTNode(ASTNodeType.BINARY_OP, "not in", [expr, right])
+                else:
+                    self.pos = saved_pos
+                    self.current_token = self.tokens[self.pos]
+                    break
+            elif self.match(TokenType.IS):
+                self.advance()
+                if self.match(TokenType.NOT):
+                    self.advance()
+                    right = self.parse_shift()
+                    expr = ASTNode(ASTNodeType.BINARY_OP, "is not", [expr, right])
+                else:
+                    right = self.parse_shift()
+                    expr = ASTNode(ASTNodeType.BINARY_OP, "is", [expr, right])
+            else:
+                break
+
+        return expr
+
+    def parse_shift(self) -> ASTNode:
+        """Parse bit-shift operators  << >>"""
+        expr = self.parse_additive()
+        while self.match(TokenType.LSHIFT, TokenType.RSHIFT):
             op = self.advance().value
             right = self.parse_additive()
             expr = ASTNode(ASTNodeType.BINARY_OP, op, [expr, right])
-
         return expr
 
     def parse_additive(self) -> ASTNode:
@@ -609,21 +809,37 @@ class Parser:
 
     def parse_multiplicative(self) -> ASTNode:
         """Parse multiplicative operators"""
-        expr = self.parse_unary()
+        expr = self.parse_power()
 
         while self.match(TokenType.STAR, TokenType.SLASH, TokenType.PERCENT):
             op = self.advance().value
-            right = self.parse_unary()
+            right = self.parse_power()
             expr = ASTNode(ASTNodeType.BINARY_OP, op, [expr, right])
 
         return expr
 
+    def parse_power(self) -> ASTNode:
+        """Parse power operator ** (right-associative)"""
+        base = self.parse_unary()
+
+        if self.match(TokenType.POWER):
+            self.advance()
+            exp = self.parse_power()  # right-associative
+            return ASTNode(ASTNodeType.BINARY_OP, "**", [base, exp])
+
+        return base
+
     def parse_unary(self) -> ASTNode:
-        """Parse unary operators"""
+        """Parse unary operators (!, -, not, ~)"""
         if self.match(TokenType.NOT, TokenType.MINUS):
             op = self.advance().value
             operand = self.parse_unary()
             return ASTNode(ASTNodeType.UNARY_OP, op, [operand])
+
+        if self.match(TokenType.BNOT):
+            self.advance()
+            operand = self.parse_unary()
+            return ASTNode(ASTNodeType.UNARY_OP, "~", [operand])
 
         if self.match(TokenType.QUESTION):
             self.advance()
@@ -633,7 +849,7 @@ class Parser:
         return self.parse_postfix()
 
     def parse_postfix(self) -> ASTNode:
-        """Parse postfix operators (call, member access, index)"""
+        """Parse postfix operators (call, member access, index, optional chaining)"""
         expr = self.parse_primary()
 
         while True:
@@ -652,6 +868,11 @@ class Parser:
                 self.advance()
                 member = self.expect(TokenType.IDENTIFIER).value
                 expr = ASTNode(ASTNodeType.MEMBER_ACCESS, member, [expr])
+
+            elif self.match(TokenType.OPTIONAL_DOT):
+                self.advance()
+                member = self.expect(TokenType.IDENTIFIER).value
+                expr = ASTNode(ASTNodeType.OPTIONAL_CHAIN, member, [expr])
 
             elif self.match(TokenType.LBRACKET):
                 self.advance()
@@ -672,8 +893,27 @@ class Parser:
 
     def parse_primary(self) -> ASTNode:
         """Parse primary expressions"""
+        # 'new ClassName(args)'
+        if self.match(TokenType.NEW):
+            self.advance()
+            class_name = self.expect(TokenType.IDENTIFIER).value
+            self.expect(TokenType.LPAREN)
+            args = []
+            while self.current_token and not self.match(TokenType.RPAREN, TokenType.EOF):
+                args.append(self.parse_expression())
+                self.skip(TokenType.COMMA)
+            self.expect(TokenType.RPAREN)
+            return ASTNode(ASTNodeType.NEW, class_name, args)
+
         if self.match(TokenType.IDENTIFIER):
             return ASTNode(ASTNodeType.IDENTIFIER, self.advance().value)
+
+        # 'self' as an identifier
+        if self.match(TokenType.SELF):
+            return ASTNode(ASTNodeType.IDENTIFIER, self.advance().value)
+
+        if self.match(TokenType.BYTES):
+            return ASTNode(ASTNodeType.LITERAL, self.advance().value, [], {"type": "bytes"})
 
         if self.match(TokenType.STRING):
             return ASTNode(ASTNodeType.LITERAL, self.advance().value, [], {"type": "string"})
@@ -702,42 +942,149 @@ class Parser:
         if self.match(TokenType.FN):
             return self.parse_lambda()
 
-        # Range operator (..)
-        if False:  # Handled in parse_range
-            pass
-
         raise ParseError(f"Unexpected token: {self.current_token}", self.current_token)
 
     def parse_array(self) -> ASTNode:
-        """Parse array literal (single or multi-line)"""
+        """Parse array literal with comprehension and spread support"""
         self.expect(TokenType.LBRACKET)
         elements = []
+
+        self.skip(TokenType.NEWLINE, TokenType.INDENT, TokenType.DEDENT)
+
+        if self.match(TokenType.RBRACKET):
+            self.advance()
+            return ASTNode(ASTNodeType.ARRAY, elements)
+
+        # First element (or spread)
+        if self.match(TokenType.SPREAD):
+            self.advance()
+            inner = self.parse_expression()
+            first_elem = ASTNode(ASTNodeType.SPREAD, None, [inner])
+        else:
+            first_elem = self.parse_expression()
+
+        # Check for list comprehension: [expr for x in iterable ...]
+        if not isinstance(first_elem, ASTNode) or first_elem.node_type != ASTNodeType.SPREAD:
+            if self.match(TokenType.FOR):
+                self.advance()
+                iter_var = self.expect(TokenType.IDENTIFIER).value
+                self.expect(TokenType.IN)
+                iterable = self.parse_expression()
+                condition = None
+                if self.match(TokenType.IF):
+                    self.advance()
+                    condition = self.parse_expression()
+                self.skip(TokenType.NEWLINE, TokenType.INDENT, TokenType.DEDENT)
+                self.expect(TokenType.RBRACKET)
+                children = [first_elem, ASTNode(ASTNodeType.IDENTIFIER, iter_var), iterable]
+                if condition:
+                    children.append(condition)
+                return ASTNode(ASTNodeType.COMPREHENSION_LIST, None, children)
+
+        elements.append(first_elem)
+        self.skip(TokenType.COMMA, TokenType.NEWLINE, TokenType.INDENT, TokenType.DEDENT)
 
         while self.current_token and not self.match(TokenType.RBRACKET, TokenType.EOF):
             self.skip(TokenType.NEWLINE, TokenType.INDENT, TokenType.DEDENT)
             if self.match(TokenType.RBRACKET):
                 break
-            elements.append(self.parse_expression())
+            if self.match(TokenType.SPREAD):
+                self.advance()
+                inner = self.parse_expression()
+                elements.append(ASTNode(ASTNodeType.SPREAD, None, [inner]))
+            else:
+                elements.append(self.parse_expression())
             self.skip(TokenType.COMMA, TokenType.NEWLINE, TokenType.INDENT, TokenType.DEDENT)
 
         self.expect(TokenType.RBRACKET)
         return ASTNode(ASTNodeType.ARRAY, elements)
 
     def parse_dict(self) -> ASTNode:
-        """Parse dictionary/object literal (single or multi-line)"""
+        """Parse dictionary/object literal with comprehension and spread support"""
         self.expect(TokenType.LBRACE)
         pairs = []
+
+        self.skip(TokenType.NEWLINE, TokenType.INDENT, TokenType.DEDENT)
+
+        if self.match(TokenType.RBRACE):
+            self.advance()
+            return ASTNode(ASTNodeType.DICT, pairs)
+
+        # Handle spread at the start
+        if self.match(TokenType.SPREAD):
+            self.advance()
+            inner = self.parse_expression()
+            spread_node = {"spread": True, "value": inner}
+            pairs.append(spread_node)
+            self.skip(TokenType.COMMA, TokenType.NEWLINE, TokenType.INDENT, TokenType.DEDENT)
+        else:
+            # Parse first key (track whether it was identifier or string)
+            if self.match(TokenType.IDENTIFIER):
+                first_key = self.advance().value
+                first_key_is_ident = True
+            elif self.match(TokenType.STRING):
+                first_key = self.advance().value
+                first_key_is_ident = False
+            else:
+                self.expect(TokenType.RBRACE)
+                return ASTNode(ASTNodeType.DICT, pairs)
+
+            self.expect(TokenType.COLON)
+            first_value = self.parse_expression()
+
+            # Dict comprehension: {k: v for k, v in pairs}
+            if self.match(TokenType.FOR):
+                self.advance()
+                # Parse key var
+                k_var = self.expect(TokenType.IDENTIFIER).value
+                v_var = None
+                if self.match(TokenType.COMMA):
+                    self.advance()
+                    v_var = self.expect(TokenType.IDENTIFIER).value
+                self.expect(TokenType.IN)
+                iterable = self.parse_expression()
+                condition = None
+                if self.match(TokenType.IF):
+                    self.advance()
+                    condition = self.parse_expression()
+                self.skip(TokenType.NEWLINE, TokenType.INDENT, TokenType.DEDENT)
+                self.expect(TokenType.RBRACE)
+                # identifier keys evaluate as variable lookups; string keys are literals
+                if first_key_is_ident:
+                    key_node = ASTNode(ASTNodeType.IDENTIFIER, first_key)
+                else:
+                    key_node = ASTNode(ASTNodeType.LITERAL, first_key, [], {"type": "string"})
+                children = [key_node, first_value,
+                            ASTNode(ASTNodeType.IDENTIFIER, k_var),
+                            ASTNode(ASTNodeType.IDENTIFIER, v_var if v_var else k_var),
+                            iterable]
+                if condition:
+                    children.append(condition)
+                return ASTNode(ASTNodeType.COMPREHENSION_DICT, None, children)
+
+            pairs.append({"key": first_key, "value": first_value})
+            self.skip(TokenType.COMMA, TokenType.NEWLINE, TokenType.INDENT, TokenType.DEDENT)
 
         while self.current_token and not self.match(TokenType.RBRACE, TokenType.EOF):
             self.skip(TokenType.NEWLINE, TokenType.INDENT, TokenType.DEDENT)
             if self.match(TokenType.RBRACE):
                 break
-            if not self.match(TokenType.IDENTIFIER):
+            if self.match(TokenType.SPREAD):
+                self.advance()
+                inner = self.parse_expression()
+                pairs.append({"spread": True, "value": inner})
+            elif self.match(TokenType.IDENTIFIER):
+                key = self.advance().value
+                self.expect(TokenType.COLON)
+                value = self.parse_expression()
+                pairs.append({"key": key, "value": value})
+            elif self.match(TokenType.STRING):
+                key = self.advance().value
+                self.expect(TokenType.COLON)
+                value = self.parse_expression()
+                pairs.append({"key": key, "value": value})
+            else:
                 break
-            key = self.advance().value
-            self.expect(TokenType.COLON)
-            value = self.parse_expression()
-            pairs.append({"key": key, "value": value})
             self.skip(TokenType.COMMA, TokenType.NEWLINE, TokenType.INDENT, TokenType.DEDENT)
 
         self.expect(TokenType.RBRACE)
@@ -775,7 +1122,7 @@ class Parser:
 
 
 def parse(source: str) -> ASTNode:
-    """Parse APOLLO source code into an AST"""
+    """Parse KOPPA source code into an AST"""
     tokens = tokenize(source)
     parser = Parser(tokens)
     return parser.parse()

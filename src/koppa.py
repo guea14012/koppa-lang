@@ -26,7 +26,7 @@ if str(_SRC_DIR) not in sys.path:
     sys.path.insert(0, str(_SRC_DIR))
 
 KOPPA_ROOT = _SRC_DIR.parent
-VERSION = "2.0.0"
+VERSION = "3.0.0"
 BANNER = r"""
  _  __  ___  ____  ____   _
 | |/ / / _ \|  _ \|  _ \ / \
@@ -108,7 +108,7 @@ def run_bytecode(filepath: str, script_args: list = None):
     """Run pre-compiled .kpc bytecode"""
     import pickle
     from vm import VirtualMachine
-    from apollo_opcodes import CodeObject
+    from koppa_opcodes import CodeObject
 
     p = _require_file(filepath)
     with open(p, "rb") as f:
@@ -131,7 +131,7 @@ def compile_file(filepath: str, output: str = None):
     code = compiler.compile(src, str(filepath))
     with open(out, "wb") as f:
         pickle.dump(code, f)
-    print(f"Compiled: {filepath} → {out}")
+    print(f"Compiled: {filepath} -> {out}")
     print(f"  Instructions : {len(code.instructions)}")
     print(f"  Constants    : {len(code.constants)}")
 

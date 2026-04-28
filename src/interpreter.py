@@ -1,6 +1,6 @@
 """
-APOLLO Language Interpreter
-Executes APOLLO AST with security primitives
+KOPPA Language Interpreter
+Executes KOPPA AST with security primitives
 """
 
 from dataclasses import dataclass, field
@@ -16,6 +16,73 @@ import concurrent.futures
 from pathlib import Path
 
 from parser import ASTNode, ASTNodeType, parse
+
+
+class KoppaBytes:
+    """KOPPA bytes type — immutable byte sequence with security helpers"""
+    def __init__(self, data):
+        if isinstance(data, KoppaBytes):
+            self.data = data.data
+        elif isinstance(data, (bytes, bytearray)):
+            self.data = bytes(data)
+        elif isinstance(data, str):
+            self.data = _parse_byte_escapes(data)
+        else:
+            self.data = bytes(data)
+
+    def __repr__(self):    return f'b"{self.data.hex()}"'
+    def __len__(self):     return len(self.data)
+    def __add__(self, o):  return KoppaBytes(self.data + (o.data if isinstance(o, KoppaBytes) else bytes(o)))
+    def __eq__(self, o):   return self.data == (o.data if isinstance(o, KoppaBytes) else o)
+
+    def hex(self):
+        return self.data.hex()
+
+    def b64(self):
+        import base64
+        return base64.b64encode(self.data).decode()
+
+    def xor(self, key):
+        if isinstance(key, int):
+            return KoppaBytes(bytes(b ^ key for b in self.data))
+        k = key.data if isinstance(key, KoppaBytes) else bytes(key)
+        if not k:
+            return KoppaBytes(self.data)
+        return KoppaBytes(bytes(self.data[i] ^ k[i % len(k)] for i in range(len(self.data))))
+
+    def to_str(self):
+        return self.data.decode('latin-1')
+
+    def split_at(self, sep):
+        parts = self.data.split(bytes([sep]) if isinstance(sep, int) else sep)
+        return [KoppaBytes(p) for p in parts]
+
+    def __getitem__(self, idx):
+        if isinstance(idx, slice):
+            return KoppaBytes(self.data[idx])
+        return self.data[idx]
+
+
+def _parse_byte_escapes(s: str) -> bytes:
+    """Convert escape sequences in a byte string literal to actual bytes"""
+    result = bytearray()
+    i = 0
+    while i < len(s):
+        if s[i] == '\\' and i + 1 < len(s):
+            esc = s[i + 1]
+            if esc == 'x' and i + 3 < len(s):
+                result.append(int(s[i+2:i+4], 16))
+                i += 4
+            elif esc == 'n':  result.append(10);  i += 2
+            elif esc == 't':  result.append(9);   i += 2
+            elif esc == 'r':  result.append(13);  i += 2
+            elif esc == '0':  result.append(0);   i += 2
+            elif esc == '\\': result.append(92);  i += 2
+            else:
+                result.append(ord(esc)); i += 2
+        else:
+            result.append(ord(s[i])); i += 1
+    return bytes(result)
 
 
 class RuntimeValue:
@@ -80,42 +147,117 @@ class ReturnException(Exception):
         self.value = value
 
 
+class BreakException(Exception):
+    """Signals a break statement inside a loop"""
+
+
+class ContinueException(Exception):
+    """Signals a continue statement inside a loop"""
+
+
+def _rv_to_display(val) -> str:
+    """Convert a RuntimeValue (or plain value) to a human-readable string"""
+    if isinstance(val, RuntimeValue):
+        val = val.value
+    if val is None:
+        return "None"
+    if isinstance(val, list):
+        inner = ", ".join(_rv_to_display(x) for x in val)
+        return f"[{inner}]"
+    if isinstance(val, dict):
+        # skip internal keys
+        pairs = []
+        for k, v in val.items():
+            if not str(k).startswith("__"):
+                pairs.append(f"{k}: {_rv_to_display(v)}")
+        return "{" + ", ".join(pairs) + "}"
+    if isinstance(val, bool):
+        return "true" if val else "false"
+    return str(val)
+
+
 def _interpolate_string(s: str, env: 'Environment') -> str:
-    """Replace {varname} and {obj.field} patterns in strings with live env values"""
+    """Replace {expr} patterns in strings with live env values.
+    Supports: {var}, {obj.field}, {obj.method()}, {fn('arg')}, {fn(var)}
+    """
     if '{' not in s:
         return s
+
     def resolve_part(val, part):
         """Resolve one member access step"""
         if isinstance(val, RuntimeValue):
             val = val.value
+        # KoppaBytes properties
+        if isinstance(val, KoppaBytes):
+            if part == "len":    return len(val)
+            if part == "hex":    return val.hex()
+            if part == "b64":    return val.b64()
+            if part == "to_str": return val.to_str()
+            return None
         if part == "len":
             return len(val) if isinstance(val, (list, dict, str)) else None
         if isinstance(val, dict):
             return val.get(part)
         if isinstance(val, list):
-            if part == "length" or part == "size":
+            if part in ("length", "size"):
                 return len(val)
         if hasattr(val, part):
-            return getattr(val, part)
+            attr = getattr(val, part)
+            if callable(attr) and not isinstance(attr, (RuntimeValue,)):
+                try:
+                    return attr()
+                except Exception:
+                    pass
+            return attr
         return None
-    _MISSING = object()  # sentinel for "variable not found"
 
     def replace_ref(m):
-        expr = m.group(1)
+        expr = m.group(1).strip()
+        interp = _get_interp_for_env(env)
+        if not interp:
+            return m.group(0)
+
+        # Try to parse and execute the expression via the interpreter
+        try:
+            from parser import parse as koppa_parse, Parser
+            from lexer import tokenize as koppa_tokenize
+            tokens = koppa_tokenize(expr)
+            p = Parser(tokens)
+            ast_expr = p.parse_expression()
+            old_env = interp.env
+            interp.env = env
+            try:
+                result = interp.execute(ast_expr)
+            finally:
+                interp.env = old_env
+            return _rv_to_display(result)
+        except Exception:
+            pass
+
+        # Fallback: simple dotted-path resolution
         try:
             parts = expr.split('.')
-            try:
-                val = env.get(parts[0])
-            except Exception:
-                return m.group(0)  # variable not defined → leave literal
+            val = env.get(parts[0])
             for part in parts[1:]:
                 val = resolve_part(val, part)
-            if isinstance(val, RuntimeValue):
-                val = val.value
-            return str(val) if val is not None else "(none)"
+            return _rv_to_display(val)
         except Exception:
             return m.group(0)
-    return re.sub(r'\{([\w.]+)\}', replace_ref, s)
+
+    # Match {anything except newline} — greedy but non-nested
+    result = re.sub(r'\{([^{}\n]+)\}', replace_ref, s)
+    return result
+
+
+# Global registry to allow interpolation to call methods
+_interp_registry: List['Interpreter'] = []
+
+
+def _get_interp_for_env(env: 'Environment') -> Optional['Interpreter']:
+    """Return the most recent interpreter that can be used for string interpolation"""
+    if _interp_registry:
+        return _interp_registry[-1]
+    return None
 
 
 class SecurityPrimitive:
@@ -217,7 +359,6 @@ class SecurityPrimitive:
     @staticmethod
     def hash_ntlm(password: str) -> RuntimeValue:
         """NTLM hash (simplified - real implementation would need impacket)"""
-        # Simplified NTLM hash
         return RuntimeValue(hashlib.md5(password.encode('utf-16le')).hexdigest(), "string")
 
     @staticmethod
@@ -374,11 +515,12 @@ class SecurityModule:
 
 
 class Interpreter:
-    """APOLLO language interpreter"""
+    """KOPPA language interpreter"""
 
     def __init__(self):
         self.env = Environment()
         self.load_builtins()
+        _interp_registry.append(self)
 
     def load_builtins(self):
         """Load built-in modules"""
@@ -464,6 +606,8 @@ class Interpreter:
 
         if node.node_type == ASTNodeType.LITERAL:
             val = node.value
+            if node.meta.get("type") == "bytes":
+                return RuntimeValue(KoppaBytes(val), "bytes")
             if isinstance(val, str):
                 val = _interpolate_string(val, self.env)
             return RuntimeValue(val, node.meta.get("type", "any"))
@@ -481,29 +625,38 @@ class Interpreter:
             return self.execute_unary_op(node)
 
         if node.node_type == ASTNodeType.ARRAY:
-            elements = node.value if isinstance(node.value, list) else node.children
-            return RuntimeValue([self.execute(elem) for elem in elements], "array")
+            return self.execute_array(node)
 
         if node.node_type == ASTNodeType.INDEX:
             arr = self.execute(node.children[0])
             idx = self.execute(node.value)
-            if arr.value_type == "array" and isinstance(idx.value, int):
-                return RuntimeValue(arr.value[idx.value], "any")
+            if isinstance(arr.value, list) and isinstance(idx.value, int):
+                item = arr.value[idx.value]
+                if not isinstance(item, RuntimeValue):
+                    item = RuntimeValue(item, "any")
+                return item
+            if isinstance(arr.value, dict):
+                key = idx.value
+                val = arr.value.get(key)
+                if val is None:
+                    return RuntimeValue(None, "null")
+                return val if isinstance(val, RuntimeValue) else RuntimeValue(val, "any")
             raise InterpreterError(f"Invalid index: {idx} on {arr}")
 
         if node.node_type == ASTNodeType.DICT:
-            result_dict = {}
-            for pair in node.value:
-                key = pair["key"]
-                val = self.execute_value(pair["value"])
-                result_dict[key] = val
-            return RuntimeValue(result_dict, "dict")
+            return self.execute_dict(node)
 
         if node.node_type == ASTNodeType.TRY_CATCH:
             return self.execute_try_catch(node)
 
         if node.node_type == ASTNodeType.THROW:
             return self.execute_throw(node)
+
+        if node.node_type == ASTNodeType.BREAK:
+            raise BreakException()
+
+        if node.node_type == ASTNodeType.CONTINUE:
+            raise ContinueException()
 
         if node.node_type == ASTNodeType.ASYNC_FUNCTION:
             return self.execute_async_function(node)
@@ -517,7 +670,181 @@ class Interpreter:
         if node.node_type == ASTNodeType.EMIT:
             return self.execute_emit(node)
 
+        # New node types
+        if node.node_type == ASTNodeType.CLASS:
+            return self.execute_class_node(node)
+
+        if node.node_type == ASTNodeType.NEW:
+            return self.execute_new(node)
+
+        if node.node_type == ASTNodeType.TERNARY:
+            cond = self.execute(node.children[0])
+            if cond.value:
+                return self.execute(node.children[1])
+            else:
+                return self.execute(node.children[2])
+
+        if node.node_type == ASTNodeType.NULL_COALESCE:
+            left = self.execute(node.children[0])
+            if left.value is not None and left.value is not False and left.value != "":
+                return left
+            return self.execute(node.children[1])
+
+        if node.node_type == ASTNodeType.OPTIONAL_CHAIN:
+            obj = self.execute(node.children[0])
+            if obj.value is None:
+                return RuntimeValue(None, "null")
+            member_name = node.value
+            try:
+                return self._get_member(obj, member_name)
+            except Exception:
+                return RuntimeValue(None, "null")
+
+        if node.node_type == ASTNodeType.SPREAD:
+            # Bare spread node — evaluate the inner expression
+            return self.execute(node.children[0])
+
+        if node.node_type == ASTNodeType.UNSAFE_BLOCK:
+            # Execute block in unsafe context — full OS-level access via stdlib modules
+            old_unsafe = getattr(self, '_unsafe_ctx', False)
+            self._unsafe_ctx = True
+            try:
+                result = self.execute(node.children[0])
+            finally:
+                self._unsafe_ctx = old_unsafe
+            return result
+
+        if node.node_type == ASTNodeType.COMPREHENSION_LIST:
+            return self.execute_comprehension_list(node)
+
+        if node.node_type == ASTNodeType.COMPREHENSION_DICT:
+            return self.execute_comprehension_dict(node)
+
+        if node.node_type == ASTNodeType.DESTRUCTURE:
+            return self.execute_destructure(node)
+
         raise InterpreterError(f"Unknown node type: {node.node_type}")
+
+    # ── array / dict helpers ──────────────────────────────────────────────────
+
+    def execute_array(self, node: ASTNode) -> RuntimeValue:
+        """Execute array literal, handling spread elements"""
+        elements = node.value if isinstance(node.value, list) else node.children
+        result = []
+        for elem in elements:
+            if elem.node_type == ASTNodeType.SPREAD:
+                spread_val = self.execute(elem.children[0])
+                if isinstance(spread_val.value, list):
+                    result.extend(spread_val.value)
+                else:
+                    result.append(spread_val)
+            else:
+                result.append(self.execute(elem))
+        return RuntimeValue(result, "array")
+
+    def execute_dict(self, node: ASTNode) -> RuntimeValue:
+        """Execute dict literal, handling spread entries"""
+        result_dict = {}
+        for pair in node.value:
+            if pair.get("spread"):
+                spread_val = self.execute(pair["value"])
+                if isinstance(spread_val.value, dict):
+                    for k, v in spread_val.value.items():
+                        if k not in ("__class__", "__instance__", "__methods__"):
+                            result_dict[k] = v
+            else:
+                key = pair["key"]
+                val = self.execute_value(pair["value"])
+                result_dict[key] = val
+        return RuntimeValue(result_dict, "dict")
+
+    # ── comprehensions ────────────────────────────────────────────────────────
+
+    def execute_comprehension_list(self, node: ASTNode) -> RuntimeValue:
+        """Execute list comprehension [expr for var in iterable [if cond]]"""
+        expr_node = node.children[0]
+        var_name = node.children[1].value  # identifier node
+        iterable = self.execute(node.children[2])
+        condition = node.children[3] if len(node.children) > 3 else None
+
+        result = []
+        items = iterable.value if isinstance(iterable.value, list) else []
+        for item in items:
+            if not isinstance(item, RuntimeValue):
+                item = RuntimeValue(item, "any")
+            old_env = self.env
+            self.env = Environment(parent=old_env)
+            self.env.set(var_name, item)
+            try:
+                if condition is None or self.execute(condition).value:
+                    result.append(self.execute(expr_node))
+            finally:
+                self.env = old_env
+        return RuntimeValue(result, "array")
+
+    def execute_comprehension_dict(self, node: ASTNode) -> RuntimeValue:
+        """Execute dict comprehension {k: v for k, v in iterable}"""
+        # children: [key_expr, val_expr, k_var_id, v_var_id, iterable, (optional cond)]
+        key_expr = node.children[0]
+        val_expr = node.children[1]
+        k_var = node.children[2].value
+        v_var = node.children[3].value
+        iterable = self.execute(node.children[4])
+        condition = node.children[5] if len(node.children) > 5 else None
+
+        result = {}
+        items = iterable.value if isinstance(iterable.value, list) else []
+        for item in items:
+            if not isinstance(item, RuntimeValue):
+                item = RuntimeValue(item, "any")
+            old_env = self.env
+            self.env = Environment(parent=old_env)
+            # item could be a list/tuple [k, v] or a dict with key/value
+            if isinstance(item.value, list) and len(item.value) >= 2:
+                k_item = item.value[0]
+                v_item = item.value[1]
+            else:
+                k_item = item
+                v_item = item
+            if not isinstance(k_item, RuntimeValue):
+                k_item = RuntimeValue(k_item, "any")
+            if not isinstance(v_item, RuntimeValue):
+                v_item = RuntimeValue(v_item, "any")
+            self.env.set(k_var, k_item)
+            self.env.set(v_var, v_item)
+            try:
+                if condition is None or self.execute(condition).value:
+                    k = self.execute(key_expr)
+                    v = self.execute(val_expr)
+                    result[k.value if isinstance(k.value, str) else str(k.value)] = v
+            finally:
+                self.env = old_env
+        return RuntimeValue(result, "dict")
+
+    # ── destructuring ─────────────────────────────────────────────────────────
+
+    def execute_destructure(self, node: ASTNode) -> RuntimeValue:
+        """Execute destructuring assignment: let (a, b) = expr"""
+        value = self.execute(node.children[0])
+        names = node.value  # list of variable names
+        if isinstance(value.value, list):
+            for i, name in enumerate(names):
+                if name != "_":
+                    v = value.value[i] if i < len(value.value) else RuntimeValue(None, "null")
+                    if not isinstance(v, RuntimeValue):
+                        v = RuntimeValue(v, "any")
+                    self.env.set(name, v)
+        elif isinstance(value.value, (tuple, )):
+            lst = list(value.value)
+            for i, name in enumerate(names):
+                if name != "_":
+                    v = lst[i] if i < len(lst) else RuntimeValue(None, "null")
+                    if not isinstance(v, RuntimeValue):
+                        v = RuntimeValue(v, "any")
+                    self.env.set(name, v)
+        return value
+
+    # ── module execution ──────────────────────────────────────────────────────
 
     def execute_module(self, node: ASTNode) -> RuntimeValue:
         """Execute module (file)"""
@@ -591,6 +918,18 @@ class Interpreter:
         "brute":   "native_brute",
         "parse":   "native_parse",
         "report":  "native_report",
+        # New cybersecurity modules
+        "vuln":    "native_vuln",
+        "session": "native_session",
+        "payload": "native_payload",
+        "bypass":  "native_bypass",
+        "scan":    "native_advscan",  # override with advanced scan
+        # Security-native modules
+        "inject":  "native_inject",
+        "mem":     "native_mem",
+        "evasion": "native_evasion",
+        "covert":  "native_covert",
+        "crypt":   "native_crypt",
     }
 
     def execute_import(self, node: ASTNode) -> RuntimeValue:
@@ -635,8 +974,6 @@ class Interpreter:
     def execute_export(self, node: ASTNode) -> RuntimeValue:
         """Execute export statement"""
         value = self.execute(node.value)
-        # Register exported value in parent modules list if needed
-        # For now, just return it
         return value
 
     def execute_function(self, node: ASTNode) -> RuntimeValue:
@@ -647,7 +984,11 @@ class Interpreter:
             "return_type": node.meta.get("return_type"),
             "env": self.env
         }
-        return RuntimeValue(func, "function")
+        fn_val = RuntimeValue(func, "function")
+        # Register the function in the current env by name
+        if node.value:
+            self.env.set(node.value, fn_val)
+        return fn_val
 
     def execute_variable(self, node: ASTNode) -> RuntimeValue:
         """Execute variable declaration"""
@@ -698,30 +1039,61 @@ class Interpreter:
         return RuntimeValue(None, "null")
 
     def execute_for(self, node: ASTNode) -> RuntimeValue:
-        """Execute for loop"""
+        """Execute for loop with break/continue/else and tuple destructuring"""
         var_name = node.value
         iterable = self.execute(node.children[0])
         body = node.children[1]
 
         result = RuntimeValue(None, "null")
+        items = iterable.value if isinstance(iterable.value, list) else []
 
-        if isinstance(iterable.value, list):
-            for item in iterable.value:
-                if not isinstance(item, RuntimeValue):
-                    item = RuntimeValue(item, "any")
+        broke = False
+        for item in items:
+            if not isinstance(item, RuntimeValue):
+                item = RuntimeValue(item, "any")
+
+            # Tuple destructuring in for: for (k, v) in ...
+            if isinstance(var_name, tuple):
+                if isinstance(item.value, list):
+                    for i, vn in enumerate(var_name):
+                        v = item.value[i] if i < len(item.value) else RuntimeValue(None, "null")
+                        if not isinstance(v, RuntimeValue):
+                            v = RuntimeValue(v, "any")
+                        self.env.set(vn, v)
+                else:
+                    self.env.set(var_name[0], item)
+            else:
                 self.env.set(var_name, item)
+
+            try:
                 result = self.execute(body)
+            except BreakException:
+                broke = True
+                break
+            except ContinueException:
+                continue
+
+        # for...else: execute else block only if loop was not broken
+        if not broke:
+            else_block = node.meta.get("else_block")
+            if else_block:
+                result = self.execute(else_block)
 
         return result
 
     def execute_while(self, node: ASTNode) -> RuntimeValue:
-        """Execute while loop"""
+        """Execute while loop (supports break/continue)"""
         condition_node = node.value
         body = node.children[0]
 
         result = RuntimeValue(None, "null")
         while self.execute(condition_node).value:
-            result = self.execute(body)
+            try:
+                result = self.execute(body)
+            except BreakException:
+                break
+            except ContinueException:
+                continue
 
         return result
 
@@ -736,6 +1108,9 @@ class Interpreter:
     def execute_identifier(self, node: ASTNode) -> RuntimeValue:
         """Resolve identifier"""
         name = node.value
+        # Handle 'None' as null
+        if name == "None":
+            return RuntimeValue(None, "null")
         try:
             return self.env.get(name)
         except NameError:
@@ -744,10 +1119,36 @@ class Interpreter:
                 return RuntimeValue(self.env.modules[name], "module")
             raise
 
-    def execute_member_access(self, node: ASTNode) -> RuntimeValue:
-        """Execute member access (e.g., log.info)"""
-        obj = self.execute(node.children[0])
-        member_name = node.value
+    def _get_member(self, obj: RuntimeValue, member_name: str) -> RuntimeValue:
+        """Get a member from an object (shared logic for MEMBER_ACCESS and OPTIONAL_CHAIN)"""
+        # KoppaBytes methods
+        if isinstance(obj.value, KoppaBytes):
+            kb = obj.value
+            if member_name == "hex":    return RuntimeValue(kb.hex(), "string")
+            if member_name == "b64":    return RuntimeValue(kb.b64(), "string")
+            if member_name == "len":    return RuntimeValue(len(kb), "int")
+            if member_name == "to_str": return RuntimeValue(kb.to_str(), "string")
+            if member_name == "xor":
+                def _xor_method(key):
+                    k = key.value if isinstance(key, RuntimeValue) else key
+                    return RuntimeValue(kb.xor(k), "bytes")
+                return RuntimeValue(_xor_method, "method")
+
+        # Session / arbitrary Python objects with methods
+        if obj.value_type in ("session", "object", "any") and hasattr(obj.value, member_name):
+            attr = getattr(obj.value, member_name)
+            if callable(attr):
+                def _make_bound(m):
+                    def _bound(*call_args):
+                        raw = [a.value if isinstance(a, RuntimeValue) else a for a in call_args]
+                        result = m(*raw)
+                        if isinstance(result, RuntimeValue): return result
+                        if result is None: return RuntimeValue(None, "null")
+                        return RuntimeValue(result, "any")
+                    return RuntimeValue(_bound, "method")
+                return _make_bound(attr)
+            if isinstance(attr, RuntimeValue): return attr
+            return RuntimeValue(attr, "any")
 
         if obj.value_type == "module" and isinstance(obj.value, dict):
             if member_name in obj.value:
@@ -757,19 +1158,37 @@ class Interpreter:
         if obj.value_type == "array":
             if member_name == "len":
                 return RuntimeValue(len(obj.value), "int")
+            if member_name == "length":
+                return RuntimeValue(len(obj.value), "int")
             if member_name == "push":
                 def push(item):
                     obj.value.append(item)
                     return RuntimeValue(None, "null")
                 return RuntimeValue(push, "method")
+            if member_name == "pop":
+                def pop_fn():
+                    if obj.value:
+                        return obj.value.pop()
+                    return RuntimeValue(None, "null")
+                return RuntimeValue(pop_fn, "method")
             if member_name == "map":
                 def map_fn(fn):
                     return RuntimeValue([fn(x).value for x in obj.value], "array")
                 return RuntimeValue(map_fn, "method")
+            if member_name == "filter":
+                def filter_fn(fn):
+                    return RuntimeValue([x for x in obj.value if fn(x).value], "array")
+                return RuntimeValue(filter_fn, "method")
             if member_name == "where":
                 def where_fn(fn):
                     return RuntimeValue([x for x in obj.value if fn(x).value], "array")
                 return RuntimeValue(where_fn, "method")
+            if member_name == "join":
+                def join_fn(sep=""):
+                    sep = sep.value if isinstance(sep, RuntimeValue) else sep
+                    parts = [str(x.value if isinstance(x, RuntimeValue) else x) for x in obj.value]
+                    return RuntimeValue(sep.join(parts), "string")
+                return RuntimeValue(join_fn, "method")
 
         # Object instance method/field access
         if obj.value_type == "object" and isinstance(obj.value, dict):
@@ -781,8 +1200,20 @@ class Interpreter:
                         old_env = self.env
                         self.env = Environment(parent=m.get("env", old_env))
                         self.env.set("self", o)
-                        for param, arg in zip(m.get("params", [])[1:], args):
-                            self.env.set(param["name"], arg)
+                        params = m.get("params", [])
+                        # skip 'self' param (first param)
+                        non_self_params = [p for p in params if p.get("name") != "self"]
+                        provided = list(args)
+                        for i, param in enumerate(non_self_params):
+                            if param.get("variadic"):
+                                self.env.set(param["name"], RuntimeValue(list(provided[i:]), "array"))
+                                break
+                            elif i < len(provided):
+                                self.env.set(param["name"], provided[i])
+                            elif "default" in param:
+                                self.env.set(param["name"], self.execute(param["default"]))
+                            else:
+                                self.env.set(param["name"], RuntimeValue(None, "null"))
                         try:
                             result = self.execute(m["body"])
                         except ReturnException as e:
@@ -810,6 +1241,8 @@ class Interpreter:
             s = obj.value
             if member_name == "len":
                 return RuntimeValue(len(s), "int")
+            if member_name == "length":
+                return RuntimeValue(len(s), "int")
             if member_name == "contains":
                 return RuntimeValue(lambda sub: RuntimeValue(sub in s, "bool"), "method")
             if member_name == "split":
@@ -829,19 +1262,40 @@ class Interpreter:
 
         raise InterpreterError(f"Unknown member: {member_name} on {obj}")
 
+    def execute_member_access(self, node: ASTNode) -> RuntimeValue:
+        """Execute member access (e.g., log.info)"""
+        obj = self.execute(node.children[0])
+        member_name = node.value
+        return self._get_member(obj, member_name)
+
     def execute_call(self, node: ASTNode) -> RuntimeValue:
         """Execute function call"""
         # node.value is the function/member, node.children are args
         func = self.execute(node.value)
         args = [self.execute(arg) for arg in node.children]
 
+        # Class instantiation by calling class value directly
+        if func.value_type == "class":
+            return self.instantiate_class(func, args)
+
         if func.value_type in ("function", "async_function"):
             func_data = func.value
             old_env = self.env
             self.env = Environment(parent=func_data.get("env", self.env))
 
-            for param, arg in zip(func_data["params"], args):
-                self.env.set(param["name"], arg)
+            # Bind parameters with defaults and variadic support
+            params = func_data.get("params", [])
+            provided = args
+            for i, param in enumerate(params):
+                if param.get("variadic"):
+                    self.env.set(param["name"], RuntimeValue(list(provided[i:]), "array"))
+                    break
+                elif i < len(provided):
+                    self.env.set(param["name"], provided[i])
+                elif "default" in param:
+                    self.env.set(param["name"], self.execute(param["default"]))
+                else:
+                    self.env.set(param["name"], RuntimeValue(None, "null"))
 
             try:
                 result = self.execute(func_data["body"])
@@ -850,10 +1304,15 @@ class Interpreter:
             self.env = old_env
             return result
 
+        if func.value_type == "method" and callable(func.value):
+            result = func.value(*[a.value if isinstance(a, RuntimeValue) else a for a in args])
+            if not isinstance(result, RuntimeValue):
+                result = RuntimeValue(result, "any")
+            return result
+
         if func.value_type == "module":
             # Method call on module - func.value is a dict of {name: callable}
             if isinstance(func.value, dict) and len(node.children) > 0:
-                # The first child should be the member access with method name
                 member_node = node.children[0]
                 if member_node.node_type == ASTNodeType.MEMBER_ACCESS:
                     method_name = member_node.value
@@ -861,7 +1320,7 @@ class Interpreter:
                         return func.value[method_name](*[a.value for a in args])
 
         if callable(func.value):
-            result = func.value(*[a.value for a in args])
+            result = func.value(*[a.value if isinstance(a, RuntimeValue) else a for a in args])
             if not isinstance(result, RuntimeValue):
                 result = RuntimeValue(result, "any")
             return result
@@ -903,6 +1362,37 @@ class Interpreter:
         """Execute binary operation"""
         op = node.value
 
+        if op in ("+=", "-=", "*=", "/=", "%="):
+            right = self.execute(node.children[1])
+            lhs = node.children[0]
+            base = op[0]
+
+            def _apply(lv, rv):
+                if base == "+":
+                    return str(lv) + str(rv) if isinstance(lv, str) or isinstance(rv, str) else lv + rv
+                if base == "-": return lv - rv
+                if base == "*": return lv * rv
+                if base == "/": return lv / rv
+                return lv % rv
+
+            if lhs.node_type == ASTNodeType.IDENTIFIER:
+                current = self.env.get(lhs.value)
+                new_val = RuntimeValue(_apply(current.value, right.value), current.value_type)
+                self.env.set(lhs.value, new_val)
+                return new_val
+
+            if lhs.node_type == ASTNodeType.MEMBER_ACCESS:
+                obj = self.execute(lhs.children[0])
+                field = lhs.value
+                if isinstance(obj.value, dict):
+                    cur = obj.value.get(field)
+                    cur_val = cur.value if isinstance(cur, RuntimeValue) else cur
+                    nv = _apply(cur_val, right.value)
+                    obj.value[field] = RuntimeValue(nv, "any")
+                    return RuntimeValue(nv, "any")
+
+            raise InterpreterError(f"Cannot use {op} on {lhs.node_type}")
+
         if op == "=":
             right = self.execute(node.children[1])
             lhs = node.children[0]
@@ -912,17 +1402,26 @@ class Interpreter:
             if lhs.node_type == ASTNodeType.INDEX:
                 container = self.execute(lhs.children[0])
                 idx = self.execute(lhs.value)
-                if container.value_type == "array" and isinstance(idx.value, int):
+                if isinstance(container.value, list) and isinstance(idx.value, int):
                     while len(container.value) <= idx.value:
                         container.value.append(None)
                     container.value[idx.value] = right
-                elif container.value_type == "dict":
+                elif isinstance(container.value, dict):
                     key = idx.value if not isinstance(idx.value, RuntimeValue) else idx.value.value
                     container.value[key] = right
                 return right
             if lhs.node_type == ASTNodeType.MEMBER_ACCESS:
                 obj = self.execute(lhs.children[0])
-                if obj.value_type == "dict" and isinstance(obj.value, dict):
+                if obj.value_type in ("object", "dict") and isinstance(obj.value, dict):
+                    obj.value[lhs.value] = right
+                    return right
+                if isinstance(obj.value, dict):
+                    obj.value[lhs.value] = right
+                    return right
+                raise InterpreterError(f"Cannot assign member on {obj.value_type}")
+            if lhs.node_type == ASTNodeType.OPTIONAL_CHAIN:
+                obj = self.execute(lhs.children[0])
+                if obj.value is not None and isinstance(obj.value, dict):
                     obj.value[lhs.value] = right
                 return right
             raise InterpreterError(f"Cannot assign to {lhs.node_type}")
@@ -930,35 +1429,73 @@ class Interpreter:
         left = self.execute(node.children[0])
         right = self.execute(node.children[1])
 
+        lv = left.value if isinstance(left, RuntimeValue) else left
+        rv = right.value if isinstance(right, RuntimeValue) else right
+
+        if op == "**":
+            return RuntimeValue(lv ** rv, "number")
         if op == "==":
-            return RuntimeValue(left.value == right.value, "bool")
+            return RuntimeValue(lv == rv, "bool")
         if op == "+":
-            lv, rv = left.value, right.value
             if isinstance(lv, str) or isinstance(rv, str):
                 return RuntimeValue(str(lv) + str(rv), "string")
             return RuntimeValue(lv + rv, left.value_type)
         if op == "-":
-            return RuntimeValue(left.value - right.value, "number")
+            return RuntimeValue(lv - rv, "number")
         if op == "*":
-            return RuntimeValue(left.value * right.value, "number")
+            return RuntimeValue(lv * rv, "number")
         if op == "/":
-            return RuntimeValue(left.value / right.value, "number")
+            return RuntimeValue(lv / rv, "number")
         if op == "%":
-            return RuntimeValue(left.value % right.value, "number")
+            return RuntimeValue(lv % rv, "number")
         if op == "!=":
-            return RuntimeValue(left.value != right.value, "bool")
+            return RuntimeValue(lv != rv, "bool")
         if op == "<":
-            return RuntimeValue(left.value < right.value, "bool")
+            return RuntimeValue(lv < rv, "bool")
         if op == ">":
-            return RuntimeValue(left.value > right.value, "bool")
+            return RuntimeValue(lv > rv, "bool")
         if op == "<=":
-            return RuntimeValue(left.value <= right.value, "bool")
+            return RuntimeValue(lv <= rv, "bool")
         if op == ">=":
-            return RuntimeValue(left.value >= right.value, "bool")
+            return RuntimeValue(lv >= rv, "bool")
         if op == "&&":
-            return RuntimeValue(left.value and right.value, "bool")
+            return RuntimeValue(bool(lv) and bool(rv), "bool")
         if op == "||":
-            return RuntimeValue(left.value or right.value, "bool")
+            return RuntimeValue(lv or rv, "bool")
+        if op == "in":
+            if isinstance(rv, list):
+                return RuntimeValue(any(
+                    (x.value if isinstance(x, RuntimeValue) else x) == lv
+                    for x in rv
+                ), "bool")
+            return RuntimeValue(lv in rv, "bool")
+        if op == "not in":
+            if isinstance(rv, list):
+                return RuntimeValue(not any(
+                    (x.value if isinstance(x, RuntimeValue) else x) == lv
+                    for x in rv
+                ), "bool")
+            return RuntimeValue(lv not in rv, "bool")
+        if op == "is":
+            return RuntimeValue(lv is rv or lv == rv, "bool")
+        if op == "is not":
+            return RuntimeValue(lv is not rv and lv != rv, "bool")
+
+        # Bitwise operators
+        if op == "&":
+            if isinstance(lv, KoppaBytes):
+                return RuntimeValue(KoppaBytes(bytes(b & int(rv) for b in lv.data)), "bytes")
+            return RuntimeValue(int(lv) & int(rv), "int")
+        if op == "|":
+            return RuntimeValue(int(lv) | int(rv), "int")
+        if op == "^":
+            if isinstance(lv, KoppaBytes):
+                return RuntimeValue(lv.xor(rv if isinstance(rv, KoppaBytes) else rv), "bytes")
+            return RuntimeValue(int(lv) ^ int(rv), "int")
+        if op == "<<":
+            return RuntimeValue(int(lv) << int(rv), "int")
+        if op == ">>":
+            return RuntimeValue(int(lv) >> int(rv), "int")
 
         raise InterpreterError(f"Unknown operator: {op}")
 
@@ -967,10 +1504,12 @@ class Interpreter:
         operand = self.execute(node.children[0])
         op = node.value
 
-        if op == "!":
+        if op in ("!", "not"):
             return RuntimeValue(not operand.value, "bool")
         if op == "-":
             return RuntimeValue(-operand.value, "number")
+        if op == "~":
+            return RuntimeValue(~int(operand.value), "int")
 
         raise InterpreterError(f"Unknown unary operator: {op}")
 
@@ -1024,7 +1563,7 @@ class Interpreter:
     # ── async / parallel ─────────────────────────────────────────────────────
 
     def execute_async_function(self, node: ASTNode) -> RuntimeValue:
-        """Register async function — same as regular function, runs concurrently when awaited"""
+        """Register async function"""
         func = {
             "params": node.meta.get("params", []),
             "body":   node.meta.get("body"),
@@ -1032,7 +1571,10 @@ class Interpreter:
             "env":    self.env,
             "async":  True,
         }
-        return RuntimeValue(func, "async_function")
+        fn_val = RuntimeValue(func, "async_function")
+        if node.value:
+            self.env.set(node.value, fn_val)
+        return fn_val
 
     def execute_await(self, node: ASTNode) -> RuntimeValue:
         """Execute await — run async function and wait for result"""
@@ -1076,8 +1618,33 @@ class Interpreter:
 
     # ── class system ─────────────────────────────────────────────────────────
 
+    def execute_class_node(self, node: ASTNode) -> RuntimeValue:
+        """Register class definition from CLASS AST node"""
+        class_name = node.value
+        methods = {}
+        fields = {}
+        for method_node in node.children:
+            if method_node.node_type == ASTNodeType.FUNCTION:
+                fn_val = self.execute_function(method_node)
+                methods[method_node.value] = fn_val.value
+        cls_def = {
+            "__class__": class_name,
+            "__methods__": methods,
+            "__fields__": fields,
+            "__callable__": True,
+        }
+        cls_val = RuntimeValue(cls_def, "class")
+        self.env.set(class_name, cls_val)
+        return cls_val
+
+    def execute_new(self, node: ASTNode) -> RuntimeValue:
+        """Instantiate a class via 'new ClassName(args)'"""
+        cls_val = self.env.get(node.value)
+        args = [self.execute(arg) for arg in node.children]
+        return self.instantiate_class(cls_val, args)
+
     def execute_class(self, name: str, methods: dict, fields: dict) -> RuntimeValue:
-        """Create a class definition"""
+        """Create a class definition (legacy helper)"""
         cls = {
             "__class__": name,
             "__methods__": methods,
@@ -1102,8 +1669,19 @@ class Interpreter:
             old_env = self.env
             self.env = Environment(parent=init.get("env", old_env))
             self.env.set("self", obj)
-            for param, arg in zip(init.get("params", [])[1:], args):
-                self.env.set(param["name"], arg)
+            params = init.get("params", [])
+            non_self_params = [p for p in params if p.get("name") != "self"]
+            provided = args
+            for i, param in enumerate(non_self_params):
+                if param.get("variadic"):
+                    self.env.set(param["name"], RuntimeValue(list(provided[i:]), "array"))
+                    break
+                elif i < len(provided):
+                    self.env.set(param["name"], provided[i])
+                elif "default" in param:
+                    self.env.set(param["name"], self.execute(param["default"]))
+                else:
+                    self.env.set(param["name"], RuntimeValue(None, "null"))
             try:
                 self.execute(init["body"])
             except ReturnException:
@@ -1113,7 +1691,7 @@ class Interpreter:
 
 
 def interpret(source: str) -> RuntimeValue:
-    """Parse and interpret APOLLO source code"""
+    """Parse and interpret KOPPA source code"""
     ast = parse(source)
     interpreter = Interpreter()
     return interpreter.execute(ast)

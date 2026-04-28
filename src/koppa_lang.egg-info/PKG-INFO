@@ -1,10 +1,10 @@
 Metadata-Version: 2.4
 Name: koppa-lang
-Version: 2.0.1
-Summary: KOPPA — Advanced Pentesting Domain-Specific Language
+Version: 3.0.0
+Summary: KOPPA — Advanced Cybersecurity Domain-Specific Language
 Author: KOPPA Team
 Author-email: KOPPA Team <kua.kuakun@gmail.com>
-License-Expression: MIT
+License: MIT
 Keywords: pentesting,security,dsl,language,scripting
 Classifier: Programming Language :: Python :: 3
 Classifier: Operating System :: OS Independent
@@ -15,302 +15,368 @@ Description-Content-Type: text/markdown
 Dynamic: author
 Dynamic: requires-python
 
-# KOPPA Language
+# KOPPA Language v3.0
 
-**AP**hysical **P**enetration **O**peration **L**anguage & **L**ogic **O**ptimizer
+**Advanced Cybersecurity Domain-Specific Language**
 
-A domain-specific programming language designed for security professionals and penetration testers.
+A programming language built from the ground up for security professionals, penetration testers, and red teamers.
 
-## Overview
+## Why KOPPA?
 
-APOLLO combines the best features from multiple languages to create a powerful pentesting DSL:
-
-| Feature | Inspired By | Purpose |
-|---------|-------------|---------|
-| Readable syntax | Python | Easy to write and audit |
-| Pipeline operator | Bash/PowerShell | Chain security operations |
-| Pattern matching | Rust | Clean control flow |
-| Object pipeline | PowerShell | Everything is an object |
-| System integration | Bash | Execute any tool |
-| Type safety | Rust | Optional type annotations |
-| Async/await | JavaScript | Concurrent scanning |
-| Embeddability | Lua | Lightweight runtime |
+| Feature | KOPPA | Python |
+|---------|-------|--------|
+| Pipeline operator `\|>` | `data \|> clean \|> analyze` | Not available |
+| String interpolation | `"host: {target}"` | `f"host: {target}"` (needs `f` prefix) |
+| Null coalescing | `val ?: "default"` | `val or "default"` (footgun with 0/False) |
+| Optional chaining | `resp?.body?.status` | `getattr(getattr(resp,"body",None),"status",None)` |
+| Built-in security | `import scan, vuln, payload` | Requires separate pip installs |
+| Byte literals | `b"\x90\x90\xcc"` with `.xor()`, `.hex`, `.b64` | Limited operations |
+| Bitwise ops | `0xFF & mask`, `addr >> 2`, `key ^ data` | Same |
+| Class + pipeline | `Scanner("target") \|> run \|> report` | Verbose |
 
 ## Quick Start
 
 ```bash
-# Run with optimized VM (Python)
-python src/apollo.py run examples/port_scanner.apo
+# Install
+pip install koppa-lang
 
-# Run with maximum performance (Deno)
-python src/apollo.py deno examples/port_scanner.apo
+# Run a script
+koppa run script.kop
 
-# Start REPL
-python src/apollo.py repl
+# Interactive REPL
+koppa repl
+
+# Compile to bytecode
+koppa compile script.kop
 ```
 
 ## Hello World
 
-```apollo
-#!/usr/bin/apollo
-
-import scan, log
+```koppa
+import log
 
 fn main() {
     let target = "scanme.nmap.org"
-    let ports = [22, 80, 443]
-
-    log.info("Scanning {target}")
-
-    for port in ports {
-        if scan.tcp(target, port) {
-            log.info("[+] Port {port} is open - {scan.service(port)}")
-        }
-    }
-
-    target
-        |> scan.tcp(ports)
-        |> filter(open_ports)
-        |> save("results.json")
+    log.info("Scanning {target}...")
+    log.success("Done!")
 }
 ```
 
-## Key Features
-
-### Pipeline Operator
-
-Chain security operations fluently:
-
-```apollo
-target
-    |> recon.dns()
-    |> scan.tcp(ports)
-    |> enum.services()
-    |> exploit.match()
-    |> report.save()
+Run it:
+```bash
+koppa run hello.kop
 ```
 
-### Security Primitives
+## Language Features
 
-Built-in modules for common pentesting operations:
+### Variables
+```koppa
+let name   = "KOPPA"        # immutable
+var count  = 0              # mutable
+const MAX  = 1024           # constant
+```
 
-```apollo
-import recon, scan, enum, exploit, crypto, report
+### Functions with Default Parameters
+```koppa
+fn scan(host, port = 80, timeout = 1.0) {
+    return scan.tcp(host, port, timeout)
+}
 
-# Reconnaissance
-recon.whois(domain)
-recon.dns_enumerate(domain)
+fn log_all(*messages) {
+    for msg in messages {
+        log.info(msg)
+    }
+}
+```
 
-# Scanning
-scan.tcp(host, ports)
-scan.version(host, ports)
+### Classes
+```koppa
+class Scanner {
+    fn __init__(self, target, timeout = 1.0) {
+        self.target  = target
+        self.timeout = timeout
+        self.results = []
+    }
 
-# Enumeration
-enum.smb_shares(host)
-enum.ldap_users(dc)
-enum.http_directories(url, wordlist)
+    fn run(self, ports) {
+        let open = scan.mass(self.target, ports, self.timeout)
+        self.results = open
+        return self
+    }
 
-# Cryptography
-crypto.hash.md5(data)
-crypto.hash.ntlm(password)
-crypto.encode.base64(data)
+    fn report(self) {
+        log.info("[{self.target}] Open: {self.results}")
+        return self.results
+    }
+}
+
+let s = new Scanner("192.168.1.1")
+s.run([22, 80, 443, 8080]) |> s.report()
+```
+
+### Pipeline Operator
+```koppa
+target
+    |> recon.dns()
+    |> scan.mass([80, 443, 8080])
+    |> filter(open_ports)
+    |> report.save("results.json")
 ```
 
 ### Pattern Matching
-
-Clean control flow with Rust-style match:
-
-```apollo
+```koppa
 match service {
-    "http" => http.scan(target),
+    "http"  => http.scan(target),
     "https" => tls.scan(target),
-    "ssh" => ssh.brute(target, wordlist),
-    "smb" => smb.enum_shares(target),
-    _ => log.info("Unknown service")
+    "ssh"   => brute.ssh(target, wordlist),
+    "smb"   => enum.smb_shares(target),
+    _       => log.warn("Unknown: {service}")
 }
 ```
 
-### Async/Parallel Execution
+### Comprehensions
+```koppa
+let open_ports = [p for p in ports if scan.tcp(host, p)]
+let hashes     = {pw: hash.md5(pw) for pw in wordlist}
+let cracked    = [h for h in hashes if h.len == 32]
+```
 
-Run multiple operations concurrently:
+### Ternary + Null Coalescing
+```koppa
+let status = is_open ? "OPEN" : "CLOSED"
+let host   = args.host ?: "127.0.0.1"
+let port   = resp?.headers?.port ?: 80
+```
 
-```apollo
-async fn mass_scan(targets) -> Stream {
-    parallel {
-        for target in targets {
-            emit scan_port(target)
-        }
-    }
-}
+### Bitwise Operations
+```koppa
+let masked   = value & 0xFF
+let flags    = 0b0001 | 0b0010 | 0b0100
+let xored    = key ^ data
+let shifted  = addr >> 2
+let inverted = ~mask & 0xFFFF
+```
+
+### Byte Literals
+```koppa
+let nop_sled = b"\x90\x90\x90\xcc"
+let encoded  = nop_sled.xor(0x41)
+log.info("hex: {nop_sled.hex}")
+log.info("b64: {nop_sled.b64}")
+log.info("len: {nop_sled.len}")
 ```
 
 ### Error Handling
-
-Rust-style Result types:
-
-```apollo
-fn crack_hash(hash) -> Result {
-    let result = crypto.crack(hash, wordlist)
-
-    if result.cracked {
-        Ok(result.plaintext)
-    } else {
-        Err("Hash not cracked")
-    }
-}
-
-# Usage
-match crack_hash(hash) {
-    Ok(password) => log.info("Found: {password}"),
-    Err(e) => log.error("Failed: {e}")
+```koppa
+try {
+    let data = io.read_file("/etc/shadow")
+} catch (e) {
+    log.warn("Cannot read: {e}")
 }
 ```
 
-## Architecture
-
-```
-APOLLO/
-├── src/
-│   ├── lexer.py       # Tokenizer
-│   ├── parser.py      # AST builder
-│   ├── interpreter.py # Runtime executor
-│   └── apollo.py      # CLI runner
-├── stdlib/
-│   ├── recon.apo   # Reconnaissance module
-│   ├── scan.apo    # Scanning module
-│   ├── vuln.apo    # Vulnerability scanning (XSS, SQLi, LFI)
-│   ├── crypto.apo  # Cryptography module
-│   └── ...
-├── examples/
-│   ├── port_scanner.apo
-│   ├── web_scanner.apo
-│   ├── ad_enum.apo
-│   └── password_cracker.apo
-└── docs/
-    ├── LANGUAGE_SPEC.md
-    └── GETTING_STARTED.md
-```
-
-## Example Scripts
-
-### Port Scanner
-
-```apollo
-#!/usr/bin/apollo
-import scan, log
-
-let COMMON_PORTS = [21, 22, 23, 80, 443, 445, 3389]
-
-fn main(args) {
-    let target = args[0] | default("127.0.0.1")
-
-    for port in COMMON_PORTS {
-        if scan.tcp(target, port) {
-            log.info("[+] {port}: {scan.service(port)}")
-        }
-    }
-}
-```
-
-### Web Vulnerability Scanner
-
-```apollo
-#!/usr/bin/apollo
-import http, enum, report, log
-
-let XSS_PAYLOADS = ["<script>alert('XSS')</script>", "<img src=x onerror=alert(1)>"]
-
-async fn check_xss(url, param) -> Stream {
-    for payload in XSS_PAYLOADS {
-        let response = http.get("{url}?{param}={payload}")
-        if response.body.contains(payload) {
-            emit report.finding("XSS", "high", "Reflected: {payload}")
-        }
-    }
-}
-
-fn main(args) {
-    let target = args[0]
-    let params = ["search", "q", "query"]
-
+### Async / Parallel
+```koppa
+async fn mass_scan(targets) {
     parallel {
-        for param in params {
-            check_xss(target, param)
+        for target in targets {
+            emit scan.mass(target, top_ports)
         }
-    } |> report.save("xss_report.html")
+    }
 }
 ```
 
-### AD Enumeration
+## Security Modules
 
-```apollo
-#!/usr/bin/apollo
-import enum, recon, log
-
-fn enumerate_ad(domain, dc) {
-    let data = {
-        users: enum.ldap_users(dc),
-        shares: enum.smb_shares(dc),
-        kerberoastable: enum.kerberoastable(dc),
-    }
-
-    for user in data.kerberoastable {
-        log.warn("Kerberoastable: {user.spn}")
-    }
-
-    return data
-}
-
-fn main(args) {
-    let domain = args.domain | default("LOCAL")
-    enumerate_ad(domain) |> save("ad_enum.json")
-}
+```koppa
+import scan, vuln, payload, bypass, session
+import hash, encode, jwt, brute, fuzz
+import recon, dns, ssl, http, net
+import report, log
 ```
 
-## Documentation
+### `scan` — Port Scanning
+```koppa
+let open = scan.mass("192.168.1.1", [80,443,8080], 0.5)
+let svc  = scan.service(443)                          # "https"
+let b    = scan.banner("192.168.1.1", 21)
+let udp  = scan.udp("192.168.1.1", 53)
+```
 
-- [Language Specification](docs/LANGUAGE_SPEC.md) - Full syntax reference
-- [Getting Started](docs/GETTING_STARTED.md) - Tutorial and examples
-- [Standard Library](stdlib/) - Built-in modules
+### `vuln` — Vulnerability Testing
+```koppa
+let sqli = vuln.sqli_payloads()           # 15+ SQLi payloads
+let xss  = vuln.xss_payloads()            # 12+ XSS payloads
+let lfi  = vuln.lfi_payloads()            # 10+ LFI payloads
+
+let found = vuln.test_sqli(url, "id")     # active test
+let hdr   = vuln.scan_headers(url)        # security headers audit
+```
+
+### `payload` — Shell Generation
+```koppa
+let bash = payload.reverse_shell("bash",       "10.10.10.1", 4444)
+let py   = payload.reverse_shell("python",     "10.10.10.1", 4444)
+let ps   = payload.reverse_shell("powershell", "10.10.10.1", 4444)
+let web  = payload.webshell("php")
+let enc  = payload.encode(shell, "base64")
+let pat  = payload.msf_pattern(64)
+```
+
+### `bypass` — WAF Evasion
+```koppa
+let xss_vars  = bypass.xss_variants("<script>alert(1)</script>")
+let sqli_vars = bypass.sqli_variants("' OR 1=1--")
+let ip_vars   = bypass.ip_variants("127.0.0.1")
+let encoded   = bypass.encode_chain(payload, "url", "base64")
+```
+
+### `session` — HTTP Sessions
+```koppa
+let s = session.new()
+s.set_header("X-Forwarded-For", "127.0.0.1")
+let login = s.post("http://target/login", {user: "admin", pass: "test"})
+let page  = s.get("http://target/admin")
+log.info("Status: {page.status}")
+```
+
+### `hash` / `encode`
+```koppa
+let md5  = hash.md5("password")
+let ntlm = hash.ntlm("Password1!")
+let b64  = encode.b64_encode("secret")
+let hex  = encode.hex_encode(data)
+```
+
+### `jwt` — JWT Attacks
+```koppa
+let decoded = jwt.decode(token)
+let none    = jwt.none_alg(token)       # alg:none attack
+let cracked = jwt.crack(token, wordlist)
+let forged  = jwt.forge({"sub": "admin", "role": "superuser"}, "")
+```
+
+## Complete Example — Web Vulnerability Scanner
+
+```koppa
+import log, vuln, session, report
+
+fn scan_target(url) {
+    log.info("=== Scanning {url} ===")
+
+    # Security headers
+    let hdr_result = vuln.scan_headers(url)
+    log.warn("Missing headers: {hdr_result.missing.len}")
+
+    # SQL injection
+    let sqli_found = vuln.test_sqli(url, "id")
+    for finding in sqli_found {
+        log.warn("[SQLi] {finding.payload}")
+    }
+
+    # XSS
+    let xss_found = vuln.test_xss(url, "search")
+    for finding in xss_found {
+        log.warn("[XSS] {finding.payload}")
+    }
+
+    return sqli_found.len + xss_found.len
+}
+
+fn main() {
+    let targets = ["http://testphp.vulnweb.com"]
+    let total = 0
+
+    for target in targets {
+        total += scan_target(target)
+    }
+
+    log.info("Total findings: {total}")
+    total > 0 ? log.warn("Vulnerabilities found!") : log.success("Clean!")
+}
+```
 
 ## Running Scripts
 
 ```bash
-# Run a script
-python src/apollo.py run examples/port_scanner.apo
-
-# Tokenize and show tokens
-python src/apollo.py lex script.apo
-
-# Parse and show AST
-python src/apollo.py parse script.apo
-
-# Start REPL
-python src/apollo.py repl
+koppa run script.kop              # interpreter (default)
+koppa run --vm script.kop         # bytecode VM (faster)
+koppa compile script.kop          # compile to .kpc
+koppa disasm script.kop           # show bytecode
+koppa lex script.kop              # show tokens
+koppa parse script.kop            # show AST
+koppa repl                        # interactive REPL
+koppa version                     # version info
 ```
 
-## Design Goals
+## Package Manager
 
-1. **Security-First**: Built-in primitives for pentesting operations
-2. **Cross-Platform**: Works on Windows, Linux, and macOS
-3. **Readable**: Clean syntax that's easy to audit
-4. **Composable**: Pipeline operator for chaining operations
-5. **Safe by Default**: Dangerous operations require explicit opt-in
-6. **Extensible**: FFI to call Python, system tools, and external libraries
+```bash
+koppa pkg install pentest-utils   # install package
+koppa pkg list                    # list installed
+koppa pkg search scanner          # search registry
+koppa pkg init                    # create koppa.json
+```
 
-## Roadmap
+## Installation
 
-- [x] Native compiler (via Deno transpilation)
-- [x] JIT compilation for performance (via V8/Deno)
-- [ ] More stdlib modules (exploit, post, lateral)
-- [ ] Package manager for community modules
-- [ ] LSP support for IDE integration
-- [ ] Debugger with breakpoints and stepping
+```bash
+# From PyPI
+pip install koppa-lang
+
+# From source
+git clone https://github.com/yourusername/koppa
+cd koppa
+pip install -e .
+
+# Windows (Scoop)
+scoop install koppa
+
+# macOS (Homebrew)
+brew install koppa
+
+# Docker
+docker run -it koppalang/koppa repl
+```
+
+## VS Code Extension
+
+Install `koppa-language` from the VS Code marketplace for:
+- Syntax highlighting
+- Code snippets
+- `.kop` file support
+
+## Architecture
+
+```
+koppa/
++-- src/
+|   +-- lexer.py          # Tokenizer
+|   +-- parser.py         # AST builder
+|   +-- interpreter.py    # Tree-walk interpreter (default)
+|   +-- compiler.py       # Bytecode compiler
+|   +-- koppa_opcodes.py  # VM instruction set
+|   +-- vm.py             # Stack-based VM
+|   +-- stdlib_native.py  # Standard library (Python)
+|   +-- pkg_manager.py    # Package manager
+|   +-- koppa.py          # CLI entry point
++-- stdlib/
+|   +-- core.kop          # Core utilities
+|   +-- network.kop       # Network helpers
+|   +-- security.kop      # Security demos
++-- examples/
+|   +-- hello.kop
+|   +-- port_scanner.kop
+|   +-- cyber_demo.kop    # Full cybersecurity demo
+|   +-- ...
++-- vscode-extension/     # VS Code plugin
++-- tests/
+|   +-- run_tests.py
++-- docs/
+    +-- LANGUAGE_SPEC.md
+    +-- GETTING_STARTED.md
+```
 
 ## License
 
-MIT License - See LICENSE file for details
-
----
-
-**APOLLO** - Built for security professionals, by security professionals.
+MIT License — Built for security professionals, by security professionals.

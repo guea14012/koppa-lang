@@ -141,16 +141,156 @@ def test_pkg_resolve_missing():
     assert result is None
 
 
+def test_bitwise_ops():
+    """Bitwise operators &, |, ^, ~, <<, >> work correctly."""
+    from interpreter import Interpreter
+    from parser import parse
+    interp = Interpreter()
+    interp.execute(parse("""
+let band  = 0xFF & 0x0F
+let bor   = 0b001 | 0b010
+let bxor  = 0xFF ^ 0x0F
+let lsh   = 1 << 4
+let rsh   = 0x100 >> 4
+let bnot  = ~0
+"""))
+    assert interp.env.get("band").value  == 15,  "& failed"
+    assert interp.env.get("bor").value   == 3,   "| failed"
+    assert interp.env.get("bxor").value  == 0xF0, "^ failed"
+    assert interp.env.get("lsh").value   == 16,  "<< failed"
+    assert interp.env.get("rsh").value   == 16,  ">> failed"
+    assert interp.env.get("bnot").value  == -1,  "~ failed"
+
+
+def test_byte_literals():
+    """Byte literals b\"..\" create KoppaBytes with correct hex/xor."""
+    from interpreter import Interpreter, KoppaBytes
+    from parser import parse
+    interp = Interpreter()
+    interp.execute(parse('let sc = b"\\x90\\x41\\xcc"'))
+    val = interp.env.get("sc")
+    assert isinstance(val.value, KoppaBytes), "not KoppaBytes"
+    assert val.value.hex() == "9041cc", f"hex wrong: {val.value.hex()}"
+    xored = val.value.xor(0x41)
+    assert xored.data[1] == 0x00, "xor(0x41) of 0x41 should be 0x00"
+
+
+def test_ternary():
+    """Ternary expression cond ? a : b works."""
+    from interpreter import Interpreter
+    from parser import parse
+    interp = Interpreter()
+    interp.execute(parse('let x = 10\nlet r = x > 5 ? "big" : "small"'))
+    assert interp.env.get("r").value == "big", "ternary failed"
+
+
+def test_null_coalesce():
+    """Null coalescing ?: returns default when left is None."""
+    from interpreter import Interpreter
+    from parser import parse
+    interp = Interpreter()
+    interp.execute(parse('let a = None\nlet b = a ?: "default"'))
+    assert interp.env.get("b").value == "default", "?: failed"
+
+
+def test_list_comprehension():
+    """List comprehension [x for x in y if cond] works."""
+    from interpreter import Interpreter
+    from parser import parse
+    interp = Interpreter()
+    interp.execute(parse('let nums = [1,2,3,4,5,6]\nlet evens = [n for n in nums if n % 2 == 0]'))
+    evens = [v.value if hasattr(v, "value") else v for v in interp.env.get("evens").value]
+    assert evens == [2, 4, 6], f"comprehension wrong: {evens}"
+
+
+def test_class_definition():
+    """class + new + self works with method calls."""
+    from interpreter import Interpreter
+    from parser import parse
+    interp = Interpreter()
+    interp.execute(parse("""
+class Counter {
+    fn __init__(self, start) {
+        self.count = start
+    }
+    fn inc(self) {
+        self.count += 1
+        return self.count
+    }
+}
+let c = new Counter(10)
+let v = c.inc()
+"""))
+    assert interp.env.get("v").value == 11, "class method failed"
+
+
+def test_default_params():
+    """Default function parameters work when args are omitted."""
+    from interpreter import Interpreter
+    from parser import parse
+    interp = Interpreter()
+    interp.execute(parse('fn greet(name, msg = "Hello") { return msg + " " + name }\nlet r = greet("World")'))
+    assert interp.env.get("r").value == "Hello World", f"default params failed: {interp.env.get('r').value}"
+
+
+def test_compound_assign():
+    """Compound assignment operators +=, -= work."""
+    from interpreter import Interpreter
+    from parser import parse
+    interp = Interpreter()
+    interp.execute(parse('let x = 10\nx += 5\nx *= 2'))
+    assert interp.env.get("x").value == 30, f"compound assign failed: {interp.env.get('x').value}"
+
+
+def test_break_continue():
+    """break and continue work in loops."""
+    from interpreter import Interpreter
+    from parser import parse
+    interp = Interpreter()
+    interp.execute(parse("""
+let total = 0
+let i = 0
+while i < 10 {
+    i += 1
+    if i == 3 { continue }
+    if i == 6 { break }
+    total += i
+}
+"""))
+    # Adds 1+2+4+5 = 12 (skips 3, stops before 6)
+    assert interp.env.get("total").value == 12, f"break/continue: {interp.env.get('total').value}"
+
+
+def test_not_in():
+    """'not in' operator works for lists."""
+    from interpreter import Interpreter
+    from parser import parse
+    interp = Interpreter()
+    interp.execute(parse('let blocked = ["evil.com"]\nlet ok = "good.com" not in blocked'))
+    assert interp.env.get("ok").value is True, "not in failed"
+
+
+def test_hex_binary_literals():
+    """Hex 0xFF and binary 0b1010 parse to correct integers."""
+    from interpreter import Interpreter
+    from parser import parse
+    interp = Interpreter()
+    interp.execute(parse('let h = 0xFF\nlet b = 0b1010\nlet o = 0o77'))
+    assert interp.env.get("h").value == 255
+    assert interp.env.get("b").value == 10
+    assert interp.env.get("o").value == 63
+
+
 # ── Script runner ────────────────────────────────────────────────────────────
 
-def run_kop_file(path: Path, verbose: bool) -> bool:
+def run_kop_file(path: Path, verbose: bool, timeout: int = 20) -> bool:
     """Run a .kop file via the koppa CLI and return True if it exits 0."""
     try:
         result = subprocess.run(
             [sys.executable, str(SRC_DIR / "koppa.py"), "run", str(path)],
             capture_output=True,
             text=True,
-            timeout=15,
+            timeout=timeout,
             cwd=str(PROJECT_ROOT),
         )
         if verbose:
@@ -162,6 +302,8 @@ def run_kop_file(path: Path, verbose: bool) -> bool:
                     print(f"    ! {line}")
         return result.returncode == 0
     except subprocess.TimeoutExpired:
+        if verbose:
+            print(f"    ! timeout ({timeout}s)")
         return False
 
 
@@ -178,20 +320,40 @@ UNIT_TESTS = [
     test_interpreter_if_else,
     test_string_interpolation,
     test_pkg_resolve_missing,
+    # v3.0 features
+    test_bitwise_ops,
+    test_byte_literals,
+    test_ternary,
+    test_null_coalesce,
+    test_list_comprehension,
+    test_class_definition,
+    test_default_params,
+    test_compound_assign,
+    test_break_continue,
+    test_not_in,
+    test_hex_binary_literals,
 ]
 
 # .kop files that must succeed (no network, no root needed)
 SAFE_EXAMPLES = [
     "hello.kop",
     "hash_demo.kop",
+    "try_catch_demo.kop",
+    "jwt_attack.kop",
+    "features_test.kop",
 ]
 
-# .kop files that require network / local services (skipped in --fast mode)
+# .kop files that require DNS/HTTP (fast, low timeout)
 NETWORK_EXAMPLES = [
-    "quick_scan.kop",
-    "port_scanner.kop",
     "web_check.kop",
     "dns_recon.kop",
+    "web_audit.kop",
+]
+
+# .kop files that scan local ports (may be slow, need longer timeout)
+SCAN_EXAMPLES = [
+    "quick_scan.kop",
+    "port_scanner.kop",
 ]
 
 
@@ -242,7 +404,20 @@ def main():
             if not path.exists():
                 skipped += 1
                 continue
-            ok = run_kop_file(path, opts.verbose)
+            ok = run_kop_file(path, opts.verbose, timeout=20)
+            status = "PASS" if ok else "FAIL"
+            print(f"  [{status}] {fname}")
+            if ok:
+                passed += 1
+            else:
+                failed += 1
+
+        for fname in SCAN_EXAMPLES:
+            path = EXAMPLES_DIR / fname
+            if not path.exists():
+                skipped += 1
+                continue
+            ok = run_kop_file(path, opts.verbose, timeout=60)
             status = "PASS" if ok else "FAIL"
             print(f"  [{status}] {fname}")
             if ok:
@@ -250,7 +425,7 @@ def main():
             else:
                 failed += 1
     else:
-        skipped += len(NETWORK_EXAMPLES)
+        skipped += len(NETWORK_EXAMPLES) + len(SCAN_EXAMPLES)
 
     # ── Summary ─────────────────────────────────────────────────
     total = passed + failed + skipped

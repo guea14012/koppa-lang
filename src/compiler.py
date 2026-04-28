@@ -1,9 +1,9 @@
 """
-APOLLO Bytecode Compiler
+KOPPA Bytecode Compiler
 Compiles AST to executable bytecode with optimizations
 """
 
-from apollo_opcodes import OpCode, CodeObject, OpcodeBuilder
+from koppa_opcodes import OpCode, CodeObject, OpcodeBuilder
 from parser import ASTNodeType
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass
@@ -21,7 +21,7 @@ class CompileUnit:
 
 class Compiler:
     """
-    APOLLO Compiler - AST to Bytecode
+    KOPPA Compiler - AST to Bytecode
 
     Pipeline:
     1. Lexical analysis (lexer.py)
@@ -44,7 +44,7 @@ class Compiler:
         self._label_counter += 1
         return label
 
-    def compile(self, ast_or_source, source: str = "", filename: str = "<apo>") -> CodeObject:
+    def compile(self, ast_or_source, source: str = "", filename: str = "<kop>") -> CodeObject:
         """Compile AST to bytecode"""
         from lexer import tokenize
         from parser import parse, Parser
@@ -75,7 +75,7 @@ class Compiler:
         self.modules[name] = unit
         return unit
 
-    def _compile_node(self, node, builder, filename: str = "<apollo>"):
+    def _compile_node(self, node, builder, filename: str = "<koppa>"):
         """Compile AST node to bytecode"""
 
         if node.node_type == ASTNodeType.MODULE:
@@ -272,23 +272,37 @@ class Compiler:
         elif node.node_type == ASTNodeType.PIPELINE:
             self._compile_pipeline(node, builder)
 
+    _COMPOUND_BASE = {"+=": "+", "-=": "-", "*=": "*", "/=": "/", "%=": "%"}
+
     def _compile_binary_op(self, node, builder):
         """Compile binary operation"""
-        # Assignment is a special case — always leaves None on stack for EXPRESSION_STMT's POP
+        # Compound assignment: x += y  →  x = x + y
+        if node.value in self._COMPOUND_BASE:
+            lhs = node.children[0]
+            base_op_str = self._COMPOUND_BASE[node.value]
+            self._compile_node(lhs, builder)          # load current value
+            self._compile_node(node.children[1], builder)  # load rhs
+            op_map = {"+": OpCode.ADD, "-": OpCode.SUB, "*": OpCode.MUL,
+                      "/": OpCode.DIV, "%": OpCode.MOD}
+            builder.add(op_map[base_op_str])          # compute
+            if lhs.node_type == ASTNodeType.IDENTIFIER:
+                builder.add(OpCode.STORE_VAR, lhs.value)
+            # Push None for EXPRESSION_STMT's POP
+            builder.add(OpCode.LOAD_CONST, builder.const_index(None))
+            return
+
+        # Simple assignment — always leaves None on stack for EXPRESSION_STMT's POP
         if node.value == "=":
             self._compile_node(node.children[1], builder)  # Compile RHS
             lhs = node.children[0]
             if lhs.node_type == ASTNodeType.IDENTIFIER:
                 builder.add(OpCode.STORE_VAR, lhs.value)
             elif lhs.node_type == ASTNodeType.INDEX:
-                # Stack: [rhs_value]; need [rhs_value, container, index] for STORE_SUBSCR
                 self._compile_node(lhs.children[0], builder)  # container
                 self._compile_node(lhs.value, builder)         # index
                 builder.add(OpCode.STORE_SUBSCR)
             elif lhs.node_type == ASTNodeType.MEMBER_ACCESS:
-                # obj.attr = value  (not fully implemented, treat as no-op store)
                 builder.add(OpCode.POP)  # discard value
-            # Push None so EXPRESSION_STMT's POP has something to consume
             builder.add(OpCode.LOAD_CONST, builder.const_index(None))
             return
 

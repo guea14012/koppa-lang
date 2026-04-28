@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "koppa-lang"
-version = "2.0.1"
-description = "KOPPA — Advanced Pentesting Domain-Specific Language"
+version = "3.0.0"
+description = "KOPPA — Advanced Cybersecurity Domain-Specific Language"
 readme = "README.md"
 requires-python = ">=3.8"
 license = {text = "MIT"}

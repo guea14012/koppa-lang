@@ -41,7 +41,7 @@
         },
         {
           "name": "keyword.declaration.koppa",
-          "match": "\\b(fn|async|await|let|var|const|import|export|module|extern|class|struct)\\b"
+          "match": "\\b(fn|async|await|let|var|const|import|export|module|extern|class|struct|unsafe)\\b"
         },
         {
           "name": "keyword.operator.koppa",
@@ -91,7 +91,7 @@
     },
     "builtin-module": {
       "name": "support.class.koppa",
-      "match": "\\b(log|scan|net|dns|ssl|http|ftp|smtp|recon|enum|fuzz|brute|parse|report|hash|encode|crypto|jwt|str|list|math|rand|regex|json|fs|os|time|fmt|color|io|exploit)(?=\\.)"
+      "match": "\\b(log|scan|net|dns|ssl|http|ftp|smtp|recon|enum|fuzz|brute|parse|report|hash|encode|crypto|jwt|str|list|math|rand|regex|json|fs|os|time|fmt|color|io|exploit|inject|mem|evasion|covert|crypt)(?=\\.)"
     },
     "identifier": {
       "name": "variable.other.koppa",

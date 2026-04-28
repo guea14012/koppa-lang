@@ -1,11 +1,11 @@
 """
-APOLLO Virtual Machine
+KOPPA Virtual Machine
 Stack-based bytecode execution engine with security primitives
 """
 
 from typing import Any, Dict, List, Optional, Callable
 from dataclasses import dataclass, field
-from apollo_opcodes import OpCode, Instruction, CodeObject
+from koppa_opcodes import OpCode, Instruction, CodeObject
 import sys
 import socket
 import hashlib
@@ -17,7 +17,6 @@ from pathlib import Path
 @dataclass
 class Frame:
     """Execution frame for function calls"""
-    __slots__ = ('code', 'locals_', 'globals_', 'stack', 'ip', 'base_pointer')
     code: CodeObject
     locals_: Dict[str, Any] = field(default_factory=dict)
     globals_: Dict[str, Any] = field(default_factory=dict)
@@ -42,7 +41,7 @@ class VMError(Exception):
 
 class VirtualMachine:
     """
-    Stack-based Virtual Machine for APOLLO bytecode
+    Stack-based Virtual Machine for KOPPA bytecode
 
     Architecture:
     - Register-based stack machine
@@ -116,10 +115,11 @@ class VirtualMachine:
     def _load_builtins(self):
         """Load security primitive modules"""
         self.modules["native_log"] = {
-            "info": self._log_info,
-            "warn": self._log_warn,
-            "error": self._log_error,
-            "debug": self._log_debug,
+            "info":    self._log_info,
+            "warn":    self._log_warn,
+            "error":   self._log_error,
+            "debug":   self._log_debug,
+            "success": lambda msg: print(f"\033[32m[SUCCESS]\033[0m {self._interpolate(msg)}"),
         }
         self.modules["native_scan"] = {
             "tcp": self._scan_tcp,
@@ -140,11 +140,37 @@ class VirtualMachine:
             "snmp_walk": lambda h: self._exec(f"snmpwalk -v2c -c public {h}"),
         }
         self.modules["native_crypto"] = {
-            "md5": self._hash_md5,
-            "sha256": self._hash_sha256,
-            "sha512": self._hash_sha512,
+            "md5":           self._hash_md5,
+            "sha256":        self._hash_sha256,
+            "sha512":        self._hash_sha512,
+            "hash_md5":      self._hash_md5,
+            "hash_sha256":   self._hash_sha256,
+            "hash_sha512":   self._hash_sha512,
+            "hash_ntlm":     lambda d: hashlib.md5(d.encode('utf-16le')).hexdigest(),
             "base64_encode": self._base64_encode,
             "base64_decode": self._base64_decode,
+            "encode_base64": self._base64_encode,
+            "decode_base64": self._base64_decode,
+        }
+        self.modules["native_hash"] = {
+            "md5":       self._hash_md5,
+            "sha256":    self._hash_sha256,
+            "sha512":    self._hash_sha512,
+            "sha1":      lambda d: hashlib.sha1(d.encode()).hexdigest(),
+            "ntlm":      lambda d: hashlib.md5(d.encode('utf-16le')).hexdigest(),
+            "identify":  lambda h: "md5" if len(h) == 32 else "sha256" if len(h) == 64 else "sha512" if len(h) == 128 else "unknown",
+            "file":      lambda p: hashlib.sha256(open(p, 'rb').read()).hexdigest(),
+        }
+        import base64 as _b64, urllib.parse as _urlp
+        self.modules["native_encode"] = {
+            "b64_encode":  lambda d: _b64.b64encode(d.encode()).decode(),
+            "b64_decode":  lambda d: _b64.b64decode(d).decode(),
+            "hex_encode":  lambda d: d.encode().hex(),
+            "hex_decode":  lambda d: bytes.fromhex(d).decode(),
+            "url_encode":  lambda d: _urlp.quote(d),
+            "url_decode":  lambda d: _urlp.unquote(d),
+            "rot13":       lambda d: d.translate(str.maketrans('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz', 'NOPQRSTUVWXYZABCDEFGHIJKLMnopqrstuvwxyzabcdefghijklm')),
+            "detect":      lambda d: "base64" if _b64.b64encode(_b64.b64decode(d.encode())).decode() == d else "unknown",
         }
         self.modules["native_http"] = {
             "request": self._http_request,
@@ -548,13 +574,15 @@ class VirtualMachine:
 
     # Map friendly module names → native VM modules
     _MODULE_ALIASES = {
-        "log": "native_log",
-        "scan": "native_scan",
+        "log":    "native_log",
+        "scan":   "native_scan",
         "crypto": "native_crypto",
-        "io": "native_io",
-        "http": "native_http",
-        "recon": "native_recon",
-        "enum": "native_enum",
+        "hash":   "native_hash",
+        "encode": "native_encode",
+        "io":     "native_io",
+        "http":   "native_http",
+        "recon":  "native_recon",
+        "enum":   "native_enum",
     }
 
     def _import_name(self, name: str):
@@ -680,7 +708,7 @@ class VirtualMachine:
             raise VMError(f"Cannot call {func}")
 
     def _list_method(self, lst: list, name: str, args: list):
-        """Handle APOLLO list/array methods"""
+        """Handle KOPPA list/array methods"""
         if name in ("push", "append"):
             lst.append(args[0])
             return None
@@ -729,7 +757,7 @@ class VirtualMachine:
         raise VMError(f"Unknown list method: {name}")
 
     def _string_method(self, s: str, name: str, args: list):
-        """Handle APOLLO string methods"""
+        """Handle KOPPA string methods"""
         if name in ("len", "length"):
             return len(s)
         if name == "contains":
@@ -757,7 +785,7 @@ class VirtualMachine:
         raise VMError(f"Unknown string method: {name}")
 
     def _dict_method(self, d: dict, name: str, args: list):
-        """Handle APOLLO dict/object methods"""
+        """Handle KOPPA dict/object methods"""
         if name in ("len", "size"):
             return len(d)
         if name == "keys":
@@ -967,6 +995,12 @@ class VMCompiler:
 
     def __init__(self):
         self.code_objects = {}
+        self._label_counter = 0
+
+    def _new_label(self, name: str) -> str:
+        label = f"{name}_{self._label_counter}"
+        self._label_counter += 1
+        return label
 
     def compile(self, ast_node, name="<module>") -> CodeObject:
         """Compile AST node to bytecode"""
@@ -1020,24 +1054,34 @@ class VMCompiler:
             builder.add(OpCode.CALL, len(node.children) - 1)
 
         elif node.node_type == ASTNodeType.IF:
-            # Condition
+            else_lbl = self._new_label("if_else")
+            end_lbl = self._new_label("if_end")
             self._compile_node(node.value, builder)
-            builder.jump_if_false("else")
-            # Then block
+            builder.jump_if_false(else_lbl)
             self._compile_node(node.children[0], builder)
-            builder.jump("end")
-            builder.label("else")
-            # Else block
+            builder.jump(end_lbl)
+            builder.label(else_lbl)
             if node.meta.get("else"):
                 self._compile_node(node.meta["else"], builder)
-            builder.label("end")
+            builder.label(end_lbl)
 
         elif node.node_type == ASTNodeType.FOR:
-            builder.label("loop_start")
-            # Loop body
-            for stmt in node.children[1].children:
+            var_name = node.value
+            start_lbl = self._new_label("for_start")
+            end_lbl = self._new_label("for_end")
+            # Compile iterable and get iterator
+            self._compile_node(node.children[0], builder)
+            builder.add(OpCode.GET_ITER)
+            # FOR_ITER jumps to end_lbl when exhausted, otherwise pushes next value
+            builder.label(start_lbl)
+            builder.jump_for_iter(end_lbl)
+            builder.add(OpCode.STORE_VAR, var_name)
+            # Compile body
+            body = node.children[1]
+            for stmt in (body.children if hasattr(body, 'children') else [body]):
                 self._compile_node(stmt, builder)
-            builder.jump("loop_start")
+            builder.jump(start_lbl)
+            builder.label(end_lbl)
 
         elif node.node_type == ASTNodeType.FUNCTION:
             # Compile function body
@@ -1068,7 +1112,4 @@ class VMCompiler:
 
         elif node.node_type == ASTNodeType.IMPORT:
             for mod in node.value:
-                if mod in ["log", "scan", "crypto", "io"]:
-                    idx = builder.const_index(mod)
-                    builder.add(OpCode.LOAD_CONST, idx)
-                    builder.add(OpCode.STORE_GLOBAL, mod)
+                builder.add(OpCode.IMPORT_NAME, mod)

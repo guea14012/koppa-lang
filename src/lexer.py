@@ -1,6 +1,6 @@
 """
-APOLLO Language Lexer
-Tokenizes APOLLO source code into tokens for parsing
+KOPPA Language Lexer
+Tokenizes KOPPA source code into tokens for parsing
 """
 
 from enum import Enum, auto
@@ -43,6 +43,15 @@ class TokenType(Enum):
     EMIT = auto()
     DEFAULT = auto()
     THROW = auto()
+    BREAK = auto()
+    CONTINUE = auto()
+    # New keywords
+    CLASS = auto()
+    SELF = auto()
+    NEW = auto()
+    IS = auto()
+    NOT = auto()
+    UNSAFE = auto()
 
     # Operators
     PLUS = auto()
@@ -50,6 +59,11 @@ class TokenType(Enum):
     STAR = auto()
     SLASH = auto()
     PERCENT = auto()
+    PLUS_ASSIGN = auto()    # +=
+    MINUS_ASSIGN = auto()   # -=
+    STAR_ASSIGN = auto()    # *=
+    SLASH_ASSIGN = auto()   # /=
+    PERCENT_ASSIGN = auto() # %=
     PIPE = auto()        # |>
     ARROW = auto()       # ->
     FAT_ARROW = auto()   # =>
@@ -62,12 +76,16 @@ class TokenType(Enum):
     GTE = auto()
     AND = auto()
     OR = auto()
-    NOT = auto()
     QUESTION = auto()    # ? (try operator)
     DOT = auto()
     COMMA = auto()
     COLON = auto()
     SEMICOLON = auto()
+    # New operators
+    NULL_COALESCE = auto()  # ?:
+    OPTIONAL_DOT = auto()   # ?.
+    SPREAD = auto()         # ...
+    POWER = auto()          # **
 
     # Delimiters
     LPAREN = auto()
@@ -76,6 +94,17 @@ class TokenType(Enum):
     RBRACE = auto()
     LBRACKET = auto()
     RBRACKET = auto()
+
+    # Byte literal
+    BYTES = auto()
+
+    # Bitwise operators
+    BAND = auto()    # & (bitwise AND)
+    BOR = auto()     # | alone (bitwise OR)
+    BXOR = auto()    # ^ (bitwise XOR)
+    BNOT = auto()    # ~ (bitwise NOT, unary)
+    LSHIFT = auto()  # <<
+    RSHIFT = auto()  # >>
 
     # Special
     NEWLINE = auto()
@@ -124,12 +153,21 @@ KEYWORDS = {
     "emit": TokenType.EMIT,
     "default": TokenType.DEFAULT,
     "throw": TokenType.THROW,
+    "break": TokenType.BREAK,
+    "continue": TokenType.CONTINUE,
     "true": TokenType.BOOLEAN,
     "false": TokenType.BOOLEAN,
     "Ok": TokenType.IDENTIFIER,  # Result types
     "Err": TokenType.IDENTIFIER,
     "Some": TokenType.IDENTIFIER,
     "None": TokenType.IDENTIFIER,
+    # New keywords
+    "class": TokenType.CLASS,
+    "self": TokenType.SELF,
+    "new": TokenType.NEW,
+    "is": TokenType.IS,
+    "not": TokenType.NOT,
+    "unsafe": TokenType.UNSAFE,
 }
 
 
@@ -200,9 +238,55 @@ class Lexer:
             return Token(TokenType.COMMENT, value, start_line, start_col, self.source)
         return None
 
+    def read_string_raw(self, quote: str, start_line: int, start_col: int) -> Token:
+        """Read string preserving raw escape sequences for byte literals"""
+        if self.peek() == quote and self.peek(1) == quote and self.peek(2) == quote:
+            self.advance(); self.advance(); self.advance()
+            value = ""
+            while not (self.peek() == quote and self.peek(1) == quote and self.peek(2) == quote):
+                if self.peek() is None:
+                    raise LexerError("Unterminated byte string", start_line, start_col)
+                value += self.advance()
+            self.advance(); self.advance(); self.advance()
+            return Token(TokenType.BYTES, value, start_line, start_col, self.source)
+        self.advance()  # consume opening quote
+        value = ""
+        while self.peek() and self.peek() != quote:
+            if self.peek() == '\\':
+                self.advance()
+                esc = self.advance()
+                value += '\\' + (esc or '')
+            else:
+                value += self.advance()
+        if self.peek() is None:
+            raise LexerError("Unterminated byte string", start_line, start_col)
+        self.advance()  # consume closing quote
+        return Token(TokenType.BYTES, value, start_line, start_col, self.source)
+
     def read_string(self, quote: str) -> Token:
-        """Read a string literal"""
+        """Read a string literal, supporting triple-quote strings"""
         start_line, start_col = self.line, self.column
+
+        # Check for triple-quote
+        if self.peek(1) == quote and self.peek(2) == quote:
+            # Triple-quoted string
+            self.advance()  # first quote
+            self.advance()  # second quote
+            self.advance()  # third quote
+            value = ""
+            triple = quote * 3
+            while True:
+                if self.peek() is None:
+                    raise LexerError("Unterminated triple-quoted string", start_line, start_col)
+                if self.peek() == quote and self.peek(1) == quote and self.peek(2) == quote:
+                    self.advance()
+                    self.advance()
+                    self.advance()
+                    break
+                value += self.advance()
+            return Token(TokenType.STRING, value, start_line, start_col, self.source)
+
+        # Normal single-quoted string
         self.advance()  # consume opening quote
         value = ""
         while self.peek() and self.peek() != quote:
@@ -231,9 +315,36 @@ class Lexer:
         return Token(TokenType.STRING, value, start_line, start_col, self.source)
 
     def read_number(self) -> Token:
-        """Read an integer or float"""
+        """Read an integer or float, supporting hex (0xFF), binary (0b1010), octal (0o77)"""
         start_line, start_col = self.line, self.column
         value = ""
+
+        # Check for 0x, 0b, 0o prefixes
+        if self.peek() == '0' and self.peek(1) in ('x', 'X', 'b', 'B', 'o', 'O'):
+            value += self.advance()  # '0'
+            prefix = self.advance()  # 'x'/'b'/'o'
+            value += prefix
+            if prefix in ('x', 'X'):
+                # Hexadecimal
+                while self.peek() and (self.peek() in '0123456789abcdefABCDEF' or self.peek() == '_'):
+                    ch = self.advance()
+                    if ch != '_':
+                        value += ch
+                return Token(TokenType.INTEGER, str(int(value, 16)), start_line, start_col, self.source)
+            elif prefix in ('b', 'B'):
+                # Binary
+                while self.peek() and self.peek() in '01_':
+                    ch = self.advance()
+                    if ch != '_':
+                        value += ch
+                return Token(TokenType.INTEGER, str(int(value, 2)), start_line, start_col, self.source)
+            elif prefix in ('o', 'O'):
+                # Octal
+                while self.peek() and self.peek() in '01234567_':
+                    ch = self.advance()
+                    if ch != '_':
+                        value += ch
+                return Token(TokenType.INTEGER, str(int(value, 8)), start_line, start_col, self.source)
 
         # Read integer part
         while self.peek() and self.peek().isdigit():
@@ -313,6 +424,15 @@ class Lexer:
                 self.tokens.append(self.skip_comment())
                 continue
 
+            # Handle byte literals b"..." or b'...'
+            if self.peek() == 'b' and self.peek(1) in ('"', "'"):
+                start_line, start_col = self.line, self.column
+                self.advance()  # consume 'b'
+                tok = self.read_string_raw(self.peek(), start_line, start_col)
+                tok.type = TokenType.BYTES
+                self.tokens.append(tok)
+                continue
+
             # Handle strings
             if self.peek() in '"\'':
                 self.tokens.append(self.read_string(self.peek()))
@@ -331,7 +451,16 @@ class Lexer:
             # Handle operators and delimiters
             start_line, start_col = self.line, self.column
 
-            # Multi-character operators
+            # Multi-character operators — check longest first
+
+            # SPREAD: ...
+            if self.peek() == '.' and self.peek(1) == '.' and self.peek(2) == '.':
+                self.advance()
+                self.advance()
+                self.advance()
+                self.tokens.append(Token(TokenType.SPREAD, "...", start_line, start_col, self.source))
+                continue
+
             if self.peek() == '|':
                 if self.peek(1) == '>':
                     self.advance()
@@ -343,7 +472,7 @@ class Lexer:
                     self.tokens.append(Token(TokenType.OR, "||", start_line, start_col, self.source))
                 else:
                     self.advance()
-                    self.tokens.append(Token(TokenType.PIPE, "|", start_line, start_col, self.source))
+                    self.tokens.append(Token(TokenType.BOR, "|", start_line, start_col, self.source))
                 continue
 
             if self.peek() == '=':
@@ -377,12 +506,17 @@ class Lexer:
                     self.tokens.append(Token(TokenType.AND, "&&", start_line, start_col, self.source))
                 else:
                     self.advance()
-                    self.tokens.append(Token(TokenType.AND, "&", start_line, start_col, self.source))
+                    self.tokens.append(Token(TokenType.BAND, "&", start_line, start_col, self.source))
                 continue
 
             if self.peek() == '+':
-                self.advance()
-                self.tokens.append(Token(TokenType.PLUS, "+", start_line, start_col, self.source))
+                if self.peek(1) == '=':
+                    self.advance()
+                    self.advance()
+                    self.tokens.append(Token(TokenType.PLUS_ASSIGN, "+=", start_line, start_col, self.source))
+                else:
+                    self.advance()
+                    self.tokens.append(Token(TokenType.PLUS, "+", start_line, start_col, self.source))
                 continue
 
             if self.peek() == '-':
@@ -390,29 +524,62 @@ class Lexer:
                     self.advance()
                     self.advance()
                     self.tokens.append(Token(TokenType.ARROW, "->", start_line, start_col, self.source))
+                elif self.peek(1) == '=':
+                    self.advance()
+                    self.advance()
+                    self.tokens.append(Token(TokenType.MINUS_ASSIGN, "-=", start_line, start_col, self.source))
                 else:
                     self.advance()
                     self.tokens.append(Token(TokenType.MINUS, "-", start_line, start_col, self.source))
                 continue
 
             if self.peek() == '*':
-                self.advance()
-                self.tokens.append(Token(TokenType.STAR, "*", start_line, start_col, self.source))
+                if self.peek(1) == '*':
+                    self.advance()
+                    self.advance()
+                    self.tokens.append(Token(TokenType.POWER, "**", start_line, start_col, self.source))
+                elif self.peek(1) == '=':
+                    self.advance()
+                    self.advance()
+                    self.tokens.append(Token(TokenType.STAR_ASSIGN, "*=", start_line, start_col, self.source))
+                else:
+                    self.advance()
+                    self.tokens.append(Token(TokenType.STAR, "*", start_line, start_col, self.source))
                 continue
 
             if self.peek() == '/':
-                self.advance()
-                self.tokens.append(Token(TokenType.SLASH, "/", start_line, start_col, self.source))
+                if self.peek(1) == '=':
+                    self.advance()
+                    self.advance()
+                    self.tokens.append(Token(TokenType.SLASH_ASSIGN, "/=", start_line, start_col, self.source))
+                else:
+                    self.advance()
+                    self.tokens.append(Token(TokenType.SLASH, "/", start_line, start_col, self.source))
                 continue
 
             if self.peek() == '%':
-                self.advance()
-                self.tokens.append(Token(TokenType.PERCENT, "%", start_line, start_col, self.source))
+                if self.peek(1) == '=':
+                    self.advance()
+                    self.advance()
+                    self.tokens.append(Token(TokenType.PERCENT_ASSIGN, "%=", start_line, start_col, self.source))
+                else:
+                    self.advance()
+                    self.tokens.append(Token(TokenType.PERCENT, "%", start_line, start_col, self.source))
                 continue
 
+            # ? — check for ?: (null coalescing) and ?. (optional chaining) before bare ?
             if self.peek() == '?':
-                self.advance()
-                self.tokens.append(Token(TokenType.QUESTION, "?", start_line, start_col, self.source))
+                if self.peek(1) == ':':
+                    self.advance()
+                    self.advance()
+                    self.tokens.append(Token(TokenType.NULL_COALESCE, "?:", start_line, start_col, self.source))
+                elif self.peek(1) == '.':
+                    self.advance()
+                    self.advance()
+                    self.tokens.append(Token(TokenType.OPTIONAL_DOT, "?.", start_line, start_col, self.source))
+                else:
+                    self.advance()
+                    self.tokens.append(Token(TokenType.QUESTION, "?", start_line, start_col, self.source))
                 continue
 
             if self.peek() == '.':
@@ -466,9 +633,11 @@ class Lexer:
                 continue
 
             if self.peek() == '<':
-                if self.peek(1) == '=':
-                    self.advance()
-                    self.advance()
+                if self.peek(1) == '<':
+                    self.advance(); self.advance()
+                    self.tokens.append(Token(TokenType.LSHIFT, "<<", start_line, start_col, self.source))
+                elif self.peek(1) == '=':
+                    self.advance(); self.advance()
                     self.tokens.append(Token(TokenType.LTE, "<=", start_line, start_col, self.source))
                 else:
                     self.advance()
@@ -476,17 +645,25 @@ class Lexer:
                 continue
 
             if self.peek() == '>':
-                if self.peek(1) == '=':
-                    self.advance()
-                    self.advance()
+                if self.peek(1) == '>':
+                    self.advance(); self.advance()
+                    self.tokens.append(Token(TokenType.RSHIFT, ">>", start_line, start_col, self.source))
+                elif self.peek(1) == '=':
+                    self.advance(); self.advance()
                     self.tokens.append(Token(TokenType.GTE, ">=", start_line, start_col, self.source))
-                elif self.peek(1) == '>':
-                    self.advance()
-                    self.advance()
-                    self.tokens.append(Token(TokenType.GT, ">>", start_line, start_col, self.source))
                 else:
                     self.advance()
                     self.tokens.append(Token(TokenType.GT, ">", start_line, start_col, self.source))
+                continue
+
+            if self.peek() == '^':
+                self.advance()
+                self.tokens.append(Token(TokenType.BXOR, "^", start_line, start_col, self.source))
+                continue
+
+            if self.peek() == '~':
+                self.advance()
+                self.tokens.append(Token(TokenType.BNOT, "~", start_line, start_col, self.source))
                 continue
 
             # Unknown character
@@ -505,7 +682,7 @@ class Lexer:
 
 
 def tokenize(source: str) -> List[Token]:
-    """Tokenize APOLLO source code"""
+    """Tokenize KOPPA source code"""
     lexer = Lexer(source)
     return lexer.tokenize()
 

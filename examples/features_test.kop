@@ -1,0 +1,61 @@
+# KOPPA v3.0 Features Test
+import log
+
+# --- Classes ---
+class Point {
+    fn __init__(self, x, y) {
+        self.x = x
+        self.y = y
+    }
+    fn distance(self) {
+        return (self.x * self.x + self.y * self.y) ** 0.5
+    }
+    fn to_string(self) {
+        return "({self.x}, {self.y})"
+    }
+}
+
+# --- Ternary ---
+let p = new Point(3, 4)
+let dist = p.distance()
+let label = dist > 3 ? "far" : "close"
+
+# --- Comprehension ---
+let nums = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+let evens = [n for n in nums if n % 2 == 0]
+
+# --- Default params ---
+fn greet(name, msg = "Hello") {
+    return "{msg}, {name}!"
+}
+
+# --- Spread ---
+let a = [1, 2, 3]
+let b = [4, 5, 6]
+let combined = [...a, ...b]
+
+# --- Null coalescing ---
+let maybe = None
+let val = maybe ?: "default"
+
+# --- not in ---
+let blocked = ["evil.com", "bad.com"]
+let safe = "good.com" not in blocked
+
+# --- Power ---
+let squared = 2 ** 8
+
+fn main() {
+    log.info("=== KOPPA v3.0 Features ===")
+    log.info("Point: {p.to_string()}")
+    log.info("Distance: {dist}")
+    log.info("Label: {label}")
+    log.info("Evens: {evens}")
+    log.info("Greet: {greet('World')}")
+    log.info("Greet custom: {greet('Alice', 'Hi')}")
+    log.info("Combined: {combined}")
+    log.info("Null coalesce: {val}")
+    log.info("Safe: {safe}")
+    log.info("2**8 = {squared}")
+    log.success("All features working!")
+}
