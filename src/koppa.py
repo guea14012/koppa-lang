@@ -302,6 +302,9 @@ def _usage():
     print("  koppa repl                               — interactive REPL")
     print("  koppa lex <script.kop>                   — show tokens")
     print("  koppa parse <script.kop>                 — show AST")
+    print("  koppa transpile <script.kop>             — transpile unsafe{} to Rust")
+    print("  koppa transpile --release <script.kop>  — transpile + cargo build --release")
+    print("  koppa transpile --run <script.kop>      — transpile + build + run")
     print("  koppa pkg <command>                      — package manager")
     print("  koppa version                            — version info")
     print()
@@ -384,6 +387,22 @@ def main():
     elif cmd == "pkg":
         from pkg_manager import main as pkg_main
         pkg_main(args[1:])
+
+    elif cmd == "transpile":
+        rest = args[1:]
+        build_release = False
+        run_after     = False
+        if "--release" in rest:
+            build_release = True
+            rest = [x for x in rest if x != "--release"]
+        if "--run" in rest:
+            run_after = True
+            rest = [x for x in rest if x != "--run"]
+        if not rest:
+            print("Error: no script file specified.", file=sys.stderr)
+            sys.exit(1)
+        from rust_transpiler import transpile_file
+        sys.exit(transpile_file(rest[0], build_release=build_release, run_after=run_after))
 
     elif cmd in ("-c", "--eval"):
         if len(args) < 2:

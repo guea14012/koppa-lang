@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>KOPPA Playground — Try Online</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml"/>
+  <style>
+    :root {
+      --bg:     #0a0a1a; --card:   #1a1a2e; --border: #3a3a5e;
+      --border2:#2a2a4e; --gold:   #ffcc00; --cyan:   #00ffcc;
+      --pink:   #ff66aa; --purple: #aa66ff; --text:   #e0e0ff;
+      --muted:  #8080a0; --green:  #00ff88; --red:    #ff4444;
+      --editor-bg: #0d0d1f;
+    }
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    html,body{height:100%;overflow:hidden}
+    body{background:var(--bg);color:var(--text);
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+      font-size:14px;display:flex;flex-direction:column}
+
+    /* ── Nav ── */
+    nav{display:flex;align-items:center;justify-content:space-between;
+      padding:0 20px;height:52px;background:var(--card);
+      border-bottom:1px solid var(--border);flex-shrink:0;gap:12px}
+    .nav-logo{display:flex;align-items:center;gap:8px;
+      font-size:16px;font-weight:700;color:var(--gold);text-decoration:none}
+    .nav-logo .badge{font-size:10px;background:var(--border2);color:var(--cyan);
+      padding:2px 6px;border-radius:4px;font-weight:500}
+    .nav-links{display:flex;align-items:center;gap:16px}
+    .nav-links a{color:var(--muted);text-decoration:none;font-size:13px;transition:color .15s}
+    .nav-links a:hover{color:var(--text)}
+
+    /* ── Toolbar ── */
+    .toolbar{display:flex;align-items:center;gap:8px;padding:8px 12px;
+      background:var(--card);border-bottom:1px solid var(--border);flex-shrink:0;flex-wrap:wrap}
+    .btn{padding:6px 14px;border-radius:5px;font-size:13px;font-weight:600;
+      cursor:pointer;border:none;transition:all .15s;display:flex;align-items:center;gap:6px}
+    .btn-run{background:var(--green);color:#0a0a1a}
+    .btn-run:hover{background:#00e07a}
+    .btn-run:disabled{opacity:.5;cursor:not-allowed}
+    .btn-clear{background:transparent;color:var(--muted);border:1px solid var(--border2)}
+    .btn-clear:hover{border-color:var(--pink);color:var(--pink)}
+    .btn-copy{background:transparent;color:var(--muted);border:1px solid var(--border2)}
+    .btn-copy:hover{border-color:var(--cyan);color:var(--cyan)}
+    .example-select{background:var(--editor-bg);border:1px solid var(--border2);
+      color:var(--text);border-radius:5px;padding:6px 10px;font-size:13px;
+      cursor:pointer;outline:none;min-width:200px}
+    .example-select:focus{border-color:var(--cyan)}
+    .toolbar-sep{width:1px;height:24px;background:var(--border2);margin:0 4px}
+    .status-badge{padding:4px 10px;border-radius:4px;font-size:11px;font-weight:600}
+    .status-ready{background:rgba(0,255,136,.1);color:var(--green)}
+    .status-loading{background:rgba(255,204,0,.1);color:var(--gold)}
+    .status-running{background:rgba(0,255,204,.1);color:var(--cyan)}
+    .status-error{background:rgba(255,68,68,.1);color:var(--red)}
+    .toolbar-right{margin-left:auto;display:flex;align-items:center;gap:8px}
+    .kbd{font-size:10px;background:var(--border2);color:var(--muted);
+      padding:2px 6px;border-radius:3px;font-family:monospace}
+
+    /* ── Main split ── */
+    .main{display:flex;flex:1;overflow:hidden;min-height:0}
+
+    /* ── Editor pane ── */
+    .editor-pane{display:flex;flex-direction:column;flex:1;min-width:0;
+      border-right:1px solid var(--border)}
+    .pane-header{padding:6px 14px;font-size:11px;font-weight:600;
+      text-transform:uppercase;letter-spacing:1px;color:var(--muted);
+      background:var(--card);border-bottom:1px solid var(--border2);
+      display:flex;align-items:center;justify-content:space-between}
+    .pane-header .file-name{color:var(--cyan);font-size:12px}
+    .editor-wrap{flex:1;overflow:hidden;position:relative}
+    .line-numbers{position:absolute;left:0;top:0;bottom:0;width:44px;
+      background:var(--editor-bg);border-right:1px solid var(--border2);
+      color:var(--muted);font-family:monospace;font-size:13px;
+      line-height:1.6;padding:12px 6px;text-align:right;
+      overflow:hidden;user-select:none;pointer-events:none;z-index:1}
+    #editor{position:absolute;left:44px;right:0;top:0;bottom:0;
+      background:var(--editor-bg);border:none;outline:none;resize:none;
+      color:var(--text);font-family:"JetBrains Mono","Fira Code","Cascadia Code",monospace;
+      font-size:13px;line-height:1.6;padding:12px 16px;
+      tab-size:4;caret-color:var(--cyan);
+      overflow:auto}
+
+    /* ── Output pane ── */
+    .output-pane{display:flex;flex-direction:column;width:44%;min-width:280px;
+      max-width:640px}
+    .output-body{flex:1;overflow-y:auto;padding:12px 16px;
+      font-family:monospace;font-size:12.5px;line-height:1.7;
+      background:var(--editor-bg)}
+    .out-line{white-space:pre-wrap;word-break:break-all}
+    .out-info   {color:var(--cyan)}
+    .out-warn   {color:var(--gold)}
+    .out-error  {color:var(--red)}
+    .out-success{color:var(--green)}
+    .out-debug  {color:var(--purple)}
+    .out-emit   {color:var(--pink)}
+    .out-plain  {color:var(--text)}
+    .out-prompt {color:var(--muted)}
+    .out-sep    {color:var(--border);user-select:none}
+
+    /* ── Resizer ── */
+    .resizer{width:4px;background:var(--border2);cursor:col-resize;
+      flex-shrink:0;transition:background .15s}
+    .resizer:hover,.resizer.dragging{background:var(--cyan)}
+
+    /* ── Loading overlay ── */
+    #loading-overlay{position:fixed;inset:0;background:rgba(10,10,26,.92);
+      display:flex;flex-direction:column;align-items:center;justify-content:center;
+      z-index:999;gap:16px}
+    .spinner{width:36px;height:36px;border:3px solid var(--border2);
+      border-top-color:var(--cyan);border-radius:50%;animation:spin .7s linear infinite}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    #loading-overlay p{color:var(--muted);font-size:13px}
+    #loading-overlay .load-title{color:var(--cyan);font-weight:700;font-size:16px}
+    #loading-overlay.hidden{display:none}
+
+    /* ── Footer ── */
+    .footer-bar{display:flex;align-items:center;gap:16px;padding:4px 14px;
+      background:var(--card);border-top:1px solid var(--border);
+      font-size:11px;color:var(--muted);flex-shrink:0}
+    .footer-bar a{color:var(--cyan);text-decoration:none}
+    .footer-bar a:hover{text-decoration:underline}
+    .footer-right{margin-left:auto}
+
+    @media(max-width:700px){
+      .output-pane{width:100%;max-width:100%}
+      .main{flex-direction:column}
+      .editor-pane{border-right:none;border-bottom:1px solid var(--border)}
+      .resizer{display:none}
+    }
+  </style>
+</head>
+<body>
+
+<div id="loading-overlay">
+  <div class="spinner"></div>
+  <p class="load-title">Loading KOPPA Playground</p>
+  <p id="load-status">Initialising Python runtime (Pyodide)…</p>
+</div>
+
+<nav>
+  <a class="nav-logo" href="index.html">
+    KOPP<span style="color:var(--cyan)">A</span>
+    <span class="badge">Playground</span>
+  </a>
+  <div class="nav-links">
+    <a href="index.html">Home</a>
+    <a href="https://guea14012.github.io/koppa-lang" target="_blank">Docs</a>
+    <a href="https://github.com/guea14012/koppa-lang" target="_blank">GitHub</a>
+    <a href="https://guea14012.github.io/koppa-registry-" target="_blank">Packages</a>
+  </div>
+</nav>
+
+<div class="toolbar">
+  <button class="btn btn-run" id="btn-run" onclick="runCode()" disabled>
+    &#9654; Run
+  </button>
+  <span class="kbd">Ctrl+Enter</span>
+  <div class="toolbar-sep"></div>
+  <select class="example-select" id="example-select" onchange="loadExample(this.value)">
+    <option value="">— Load example —</option>
+    <optgroup label="Basics">
+      <option value="hello">Hello World</option>
+      <option value="types">Types &amp; Variables</option>
+      <option value="functions">Functions &amp; Closures</option>
+      <option value="loops">Loops &amp; Control Flow</option>
+    </optgroup>
+    <optgroup label="Security">
+      <option value="hash_demo">Hash &amp; Encode</option>
+      <option value="jwt_demo">JWT Decode</option>
+      <option value="dns_covert">DNS Covert Channel</option>
+      <option value="crypt_demo">XOR / RC4 Crypto</option>
+      <option value="port_scanner">Port Scanner</option>
+      <option value="sqli_detect">SQLi Pattern Detect</option>
+      <option value="evasion_check">Evasion Checks</option>
+    </optgroup>
+  </select>
+  <div class="toolbar-sep"></div>
+  <button class="btn btn-clear" onclick="clearOutput()">Clear Output</button>
+  <button class="btn btn-copy" onclick="copyCode()">Copy Code</button>
+  <div class="toolbar-right">
+    <span class="status-badge status-loading" id="status-badge">Loading…</span>
+  </div>
+</div>
+
+<div class="main" id="main-split">
+  <div class="editor-pane" id="editor-pane">
+    <div class="pane-header">
+      <span>Editor</span>
+      <span class="file-name" id="file-name">untitled.kop</span>
+    </div>
+    <div class="editor-wrap">
+      <div class="line-numbers" id="line-numbers">1</div>
+      <textarea id="editor" spellcheck="false" autocorrect="off" autocapitalize="off"
+        placeholder="# Write KOPPA code here…"></textarea>
+    </div>
+  </div>
+
+  <div class="resizer" id="resizer"></div>
+
+  <div class="output-pane" id="output-pane">
+    <div class="pane-header">
+      <span>Output</span>
+      <span id="exec-time" style="color:var(--muted);font-size:11px"></span>
+    </div>
+    <div class="output-body" id="output"></div>
+  </div>
+</div>
+
+<div class="footer-bar">
+  <span>KOPPA v3.0.0</span>
+  <span>·</span>
+  <a href="https://github.com/guea14012/koppa-lang" target="_blank">GitHub</a>
+  <span>·</span>
+  <span>Powered by <a href="https://pyodide.org" target="_blank">Pyodide</a></span>
+  <span class="footer-right">Advanced Pentesting DSL · MIT License</span>
+</div>
+
+<!-- Pyodide -->
+<script src="https://cdn.jsdelivr.net/pyodide/v0.26.2/full/pyodide.js"></script>
+
+<script>
+// ── Examples ─────────────────────────────────────────────────────────────────
+const EXAMPLES = {
+  hello: `# Hello World in KOPPA
+import log
+
+fn greet(name) {
+    return "Hello, {name}! Welcome to KOPPA."
+}
+
+fn main() {
+    let msg = greet("Hacker")
+    log.info(msg)
+    log.success("KOPPA is running!")
+}`,
+
+  types: `# Types and variables
+import log
+
+fn main() {
+    let name    = "KOPPA"          # string (immutable)
+    var count   = 0                # int (mutable)
+    const PI    = 3.14159          # constant
+    let active  = true             # bool
+    let tags    = ["web", "net", "crypto"]
+    let info    = {host: "10.0.0.1", port: 443}
+
+    log.info("name={name}  pi={PI}  active={active}")
+    log.info("tags: {tags}")
+    log.info("host: {info}")
+
+    # String interpolation
+    for tag in tags {
+        count += 1
+        log.info("  [{count}] {tag}")
+    }
+}`,
+
+  functions: `# Functions and closures
+import log, math
+
+fn is_prime(n) {
+    if n < 2 { return false }
+    var i = 2
+    while i * i <= n {
+        if n % i == 0 { return false }
+        i += 1
+    }
+    return true
+}
+
+fn scan_range(start, end) {
+    var primes = []
+    var i = start
+    while i <= end {
+        if is_prime(i) {
+            primes.push(i)
+        }
+        i += 1
+    }
+    return primes
+}
+
+fn main() {
+    let results = scan_range(2, 50)
+    log.info("Primes up to 50: {results}")
+    log.info("Count: {results.len}")
+}`,
+
+  loops: `# Loops and control flow
+import log
+
+fn main() {
+    # For loop with break/continue
+    log.info("=== Port range scan (simulated) ===")
+    let ports = [22, 80, 443, 8080, 8443, 3306, 5432]
+    for port in ports {
+        if port == 3306 || port == 5432 {
+            log.warn("  database port: {port}")
+            continue
+        }
+        log.info("  checking port: {port}")
+    }
+
+    # While + match
+    log.info("=== Severity matcher ===")
+    let scores = [95, 70, 40, 15]
+    for score in scores {
+        match score {
+            95 => { log.error("CRITICAL: {score}") }
+            70 => { log.warn("HIGH: {score}") }
+            40 => { log.info("MEDIUM: {score}") }
+            _  => { log.debug("LOW: {score}") }
+        }
+    }
+}`,
+
+  hash_demo: `# Hash and encode
+import log, hash, encode
+
+fn main() {
+    let secret = "password123"
+    let data   = "KOPPA Playground"
+
+    log.info("=== Hashing ===")
+    log.info("MD5:    {hash.md5(secret)}")
+    log.info("SHA256: {hash.sha256(secret)}")
+    log.info("NTLM:   {hash.ntlm(secret)}")
+
+    let h = hash.sha256(secret)
+    log.info("Identify: {hash.identify(h)}")
+
+    log.info("=== Encoding ===")
+    let b64 = encode.b64_encode(data)
+    log.info("Base64:  {b64}")
+    log.info("Decoded: {encode.b64_decode(b64)}")
+    log.info("Hex:     {encode.hex_encode(data)}")
+    log.info("URL:     {encode.url_encode('hello world & koppa=1')}")
+    log.info("ROT13:   {encode.rot13(data)}")
+}`,
+
+  jwt_demo: `# JWT decode and attack
+import log, jwt
+
+fn main() {
+    let token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4iLCJpYXQiOjE1MTYyMzkwMjJ9.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
+
+    log.info("=== JWT Analysis ===")
+    let decoded = jwt.decode(token)
+    log.info("Decoded: {decoded}")
+
+    let expired = jwt.is_expired(token)
+    log.info("Expired: {expired}")
+
+    log.info("=== Attack Vectors ===")
+    let none_attack = jwt.none_alg(token)
+    log.info("None-alg: {none_attack}")
+
+    let cracked = jwt.crack(token, ["secret","password","koppa","admin","123456"])
+    log.info("Crack result: {cracked}")
+}`,
+
+  dns_covert: `# DNS covert channel — encode/decode data
+import log, covert
+
+fn main() {
+    let domain = "c2.koppa.local"
+    let secret = "op:recon:target=192.168.1.0/24"
+
+    log.info("=== DNS Covert Channel ===")
+    log.info("Payload: {secret}")
+
+    let enc  = covert.dns_encode(secret, domain)
+    let fqdn = enc["fqdn"]
+    log.info("Encoded FQDN: {fqdn}")
+
+    let dec = covert.dns_decode(fqdn, domain)
+    log.info("Decoded:      {dec}")
+
+    # Verify round-trip
+    if dec == secret {
+        log.success("Round-trip OK")
+    } else {
+        log.error("Round-trip FAILED")
+    }
+}`,
+
+  crypt_demo: `# XOR and RC4 cipher operations
+import log, crypt
+
+fn main() {
+    let plaintext = "KOPPA native crypto — no deps needed"
+    let key       = "s3cr3t_k3y_2026"
+
+    log.info("=== XOR Cipher ===")
+    let xored   = crypt.xor(plaintext, key)
+    log.info("XOR hex: {xored.hex}")
+    let unxored = crypt.xor(xored, key)
+    log.info("Decrypted: {unxored.to_str}")
+
+    log.info("=== RC4 Cipher ===")
+    let rc4_ct = crypt.rc4(plaintext, key)
+    log.info("RC4 hex: {rc4_ct.hex}")
+    let rc4_pt = crypt.rc4(rc4_ct, key)
+    log.info("Decrypted: {rc4_pt.to_str}")
+
+    log.info("=== HMAC ===")
+    let sig = crypt.hmac("message data", key)
+    log.info("HMAC-SHA256: {sig}")
+
+    log.info("=== Key Derivation ===")
+    let kdf = crypt.derive_key("my_password", "salt_16bytes_ok!")
+    log.info("Derived key: {kdf}")
+}`,
+
+  port_scanner: `# Port scanner
+import log, net
+
+fn main() {
+    let host  = "127.0.0.1"
+    let ports = [21, 22, 23, 25, 53, 80, 110, 143, 443, 445,
+                 3306, 3389, 5432, 6379, 8080, 8443, 27017]
+
+    log.info("Scanning {host}...")
+    var open_count = 0
+
+    for port in ports {
+        let open = net.tcp_connect(host, port)
+        if open {
+            let svc = net.service_name(port)
+            log.success("  {port}/tcp  OPEN  ({svc})")
+            open_count += 1
+        }
+    }
+
+    log.info("Scan complete — {open_count} open ports")
+}`,
+
+  sqli_detect: `# SQL injection pattern detector
+import log, regex, parse
+
+fn check_sqli(param) {
+    let patterns = [
+        "' OR '1'='1",
+        "'; DROP TABLE",
+        "UNION SELECT",
+        "1=1--",
+        "admin'--",
+        "' OR 1=1#",
+        "1; WAITFOR DELAY",
+    ]
+    for pat in patterns {
+        if regex.search(pat, param) {
+            return true
+        }
+    }
+    return false
+}
+
+fn main() {
+    let inputs = [
+        "admin",
+        "' OR '1'='1' --",
+        "john@example.com",
+        "1; DROP TABLE users--",
+        "normal_user_123",
+        "admin'--",
+    ]
+
+    log.info("=== SQLi Detection ===")
+    for inp in inputs {
+        let vuln = check_sqli(inp)
+        if vuln {
+            log.error("SQLI DETECTED: {inp}")
+        } else {
+            log.info("Clean input:   {inp}")
+        }
+    }
+}`,
+
+  evasion_check: `# Evasion and environment checks
+import log, evasion
+
+fn main() {
+    log.info("=== Environment Analysis ===")
+
+    let dbg = evasion.is_debugged()
+    if dbg {
+        log.error("Debugger detected!")
+    } else {
+        log.info("No debugger detected")
+    }
+
+    let vm = evasion.is_vm()
+    let vm_found = vm["detected"]
+    let indicators = vm["indicators"]
+    log.info("VM detected: {vm_found}")
+    if vm_found {
+        log.warn("VM indicators: {indicators}")
+    }
+
+    let sb = evasion.is_sandbox()
+    let sb_found = sb["detected"]
+    log.info("Sandbox detected: {sb_found}")
+
+    let parent = evasion.check_parent()
+    log.info("Parent process: {parent}")
+
+    # Time-jitter sleep
+    log.info("Testing sleep jitter (0.1s)...")
+    let slept = evasion.sleep(0.1)
+    let accel = slept["accelerated"]
+    log.info("Time accelerated: {accel}")
+
+    log.success("Environment check complete")
+}`,
+}
+
+// ── State ────────────────────────────────────────────────────────────────────
+let pyodide = null
+let isReady = false
+
+// ── Pyodide boot ─────────────────────────────────────────────────────────────
+const RAW = 'https://raw.githubusercontent.com/guea14012/koppa-lang/main/src/'
+const SRC_FILES = ['lexer.py','parser.py','interpreter.py','stdlib_native.py',
+                   'koppa_opcodes.py','apollo_opcodes.py']
+
+async function bootPyodide() {
+  setStatus('loading', 'Loading…')
+  try {
+    setLoad('Loading Pyodide runtime…')
+    pyodide = await loadPyodide()
+
+    setLoad('Fetching KOPPA source files…')
+    for (const f of SRC_FILES) {
+      try {
+        const r = await fetch(RAW + f)
+        if (r.ok) {
+          pyodide.FS.writeFile('/' + f, await r.text())
+        }
+      } catch(_) {}
+    }
+
+    setLoad('Initialising interpreter…')
+    await pyodide.runPythonAsync(`
+import sys, io
+sys.path.insert(0, '/')
+
+# Patch stdout/stderr capture
+import builtins
+_original_print = builtins.print
+_output_lines = []
+
+def _koppa_print(*args, **kwargs):
+    sep = kwargs.get('sep', ' ')
+    end = kwargs.get('end', '\\n')
+    line = sep.join(str(a) for a in args) + end
+    _output_lines.append(line)
+
+builtins.print = _koppa_print
+
+try:
+    from interpreter import Interpreter, ReturnException
+    from parser import parse as koppa_parse
+    _interp_ok = True
+except Exception as e:
+    _interp_ok = False
+    _interp_err = str(e)
+`)
+    const ok = pyodide.globals.get('_interp_ok')
+    if (!ok) {
+      const err = pyodide.globals.get('_interp_err')
+      setStatus('error', 'Load failed')
+      appendOutput(`[WARN] Could not load full interpreter: ${err}\nRunning in demo mode.`, 'warn')
+    }
+
+    isReady = true
+    document.getElementById('btn-run').disabled = false
+    setStatus('ready', 'Ready')
+    document.getElementById('loading-overlay').classList.add('hidden')
+    loadExample('hash_demo')
+  } catch(e) {
+    setStatus('error', 'Failed')
+    document.getElementById('loading-overlay').innerHTML =
+      `<p style="color:var(--red)">Failed to load Pyodide: ${e.message}</p>
+       <p style="color:var(--muted);font-size:12px;margin-top:8px">
+         Check your internet connection and try reloading.</p>`
+  }
+}
+
+// ── Run ───────────────────────────────────────────────────────────────────────
+async function runCode() {
+  if (!isReady) return
+  const code = document.getElementById('editor').value.trim()
+  if (!code) return
+
+  setStatus('running', 'Running…')
+  document.getElementById('btn-run').disabled = true
+  document.getElementById('exec-time').textContent = ''
+  appendOutput('─'.repeat(48), 'sep')
+
+  const t0 = performance.now()
+  try {
+    // Escape code for Python string embedding
+    const escaped = code.replace(/\\/g, '\\\\').replace(/"""/g, '\\"\\"\\"')
+    await pyodide.runPythonAsync(`
+_output_lines.clear()
+
+_src = """${escaped}"""
+
+try:
+    from interpreter import Interpreter, ReturnException
+    from parser import parse as koppa_parse
+
+    _ast  = koppa_parse(_src)
+    _interp = Interpreter()
+    _result = _interp.execute(_ast)
+    _run_err = None
+except ReturnException:
+    _run_err = None
+except Exception as _e:
+    _run_err = str(_e)
+`)
+    const lines  = pyodide.globals.get('_output_lines').toJs()
+    const runErr = pyodide.globals.get('_run_err')
+
+    for (const line of (lines || [])) {
+      appendRawLine(line.trimEnd())
+    }
+    if (runErr) {
+      appendOutput(`[Error] ${runErr}`, 'error')
+      setStatus('error', 'Error')
+    } else {
+      setStatus('ready', 'Ready')
+    }
+  } catch(e) {
+    appendOutput(`[Error] ${e.message}`, 'error')
+    setStatus('error', 'Error')
+  }
+
+  const ms = Math.round(performance.now() - t0)
+  document.getElementById('exec-time').textContent = `${ms}ms`
+  document.getElementById('btn-run').disabled = false
+}
+
+// ── Output ────────────────────────────────────────────────────────────────────
+function appendRawLine(line) {
+  let cls = 'plain'
+  if      (line.startsWith('[INFO]'))    cls = 'info'
+  else if (line.startsWith('[WARN]'))    cls = 'warn'
+  else if (line.startsWith('[ERROR]'))   cls = 'error'
+  else if (line.startsWith('[SUCCESS]')) cls = 'success'
+  else if (line.startsWith('[DEBUG]'))   cls = 'debug'
+  else if (line.startsWith('[EMIT]'))    cls = 'emit'
+  appendOutput(line, cls)
+}
+
+function appendOutput(text, cls = 'plain') {
+  const out = document.getElementById('output')
+  const div = document.createElement('div')
+  div.className = `out-line out-${cls}`
+  div.textContent = text
+  out.appendChild(div)
+  out.scrollTop = out.scrollHeight
+}
+
+function clearOutput() {
+  document.getElementById('output').innerHTML = ''
+  document.getElementById('exec-time').textContent = ''
+}
+
+// ── Examples ──────────────────────────────────────────────────────────────────
+function loadExample(key) {
+  if (!key || !EXAMPLES[key]) return
+  document.getElementById('editor').value = EXAMPLES[key]
+  document.getElementById('file-name').textContent = key + '.kop'
+  document.getElementById('example-select').value = key
+  updateLineNumbers()
+  clearOutput()
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function setStatus(type, text) {
+  const el = document.getElementById('status-badge')
+  el.className = 'status-badge status-' + type
+  el.textContent = text
+}
+function setLoad(msg) {
+  document.getElementById('load-status').textContent = msg
+}
+async function copyCode() {
+  const code = document.getElementById('editor').value
+  try {
+    await navigator.clipboard.writeText(code)
+    const b = document.querySelector('.btn-copy')
+    b.textContent = 'Copied!'
+    setTimeout(() => b.textContent = 'Copy Code', 1500)
+  } catch(_) {}
+}
+
+// ── Line numbers ──────────────────────────────────────────────────────────────
+function updateLineNumbers() {
+  const editor = document.getElementById('editor')
+  const lines  = editor.value.split('\n').length
+  const nums   = Array.from({length: lines}, (_, i) => i + 1).join('\n')
+  document.getElementById('line-numbers').textContent = nums
+}
+
+// ── Keyboard ──────────────────────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+    e.preventDefault()
+    runCode()
+  }
+})
+
+const editor = document.getElementById('editor')
+editor.addEventListener('input', updateLineNumbers)
+editor.addEventListener('scroll', () => {
+  document.getElementById('line-numbers').scrollTop = editor.scrollTop
+})
+editor.addEventListener('keydown', e => {
+  // Tab → 4 spaces
+  if (e.key === 'Tab') {
+    e.preventDefault()
+    const s = editor.selectionStart
+    editor.value = editor.value.substring(0, s) + '    ' + editor.value.substring(editor.selectionEnd)
+    editor.selectionStart = editor.selectionEnd = s + 4
+    updateLineNumbers()
+  }
+})
+
+// ── Resizer ───────────────────────────────────────────────────────────────────
+const resizer    = document.getElementById('resizer')
+const outputPane = document.getElementById('output-pane')
+let dragging = false, startX = 0, startW = 0
+
+resizer.addEventListener('mousedown', e => {
+  dragging = true
+  startX = e.clientX
+  startW = outputPane.offsetWidth
+  resizer.classList.add('dragging')
+  document.body.style.userSelect = 'none'
+})
+document.addEventListener('mousemove', e => {
+  if (!dragging) return
+  const delta = startX - e.clientX
+  const newW  = Math.max(220, Math.min(startW + delta, window.innerWidth * .7))
+  outputPane.style.width = newW + 'px'
+})
+document.addEventListener('mouseup', () => {
+  dragging = false
+  resizer.classList.remove('dragging')
+  document.body.style.userSelect = ''
+})
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+updateLineNumbers()
+bootPyodide()
+</script>
+</body>
+</html>
