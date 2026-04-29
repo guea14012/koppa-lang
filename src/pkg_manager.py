@@ -10,12 +10,18 @@ Usage (via koppa CLI):
     koppa pkg search <query>          # search registry
     koppa pkg init                    # create koppa.json in current dir
     koppa pkg update                  # update all packages
+    koppa pkg login [--token TOKEN]   # login to registry
+    koppa pkg logout                  # logout
+    koppa pkg whoami                  # show current user
+    koppa pkg publish                 # publish current package
+    koppa pkg token                   # show API token
 """
 
 import json
 import shutil
 import urllib.request
 import urllib.error
+import urllib.parse
 import zipfile
 import tempfile
 import os
@@ -28,8 +34,15 @@ PACKAGES_DIR  = KOPPA_HOME / "packages"
 REGISTRY_CACHE = KOPPA_HOME / "registry.json"
 
 REGISTRY_URL = (
-    "https://raw.githubusercontent.com/guea14012/koppa-registry/main/index.json"
+    "https://raw.githubusercontent.com/guea14012/koppa-registry-/main/index.json"
 )
+REGISTRY_WEB  = "https://guea14012.github.io/koppa-registry-"
+AUTH_FILE     = KOPPA_HOME / "auth.json"
+
+# Supabase config — mirrors www/_config.js
+# Update these after creating your Supabase project
+SUPABASE_URL      = "https://YOUR_PROJECT_ID.supabase.co"
+SUPABASE_ANON_KEY = "YOUR_ANON_KEY_HERE"
 
 # Bundled fallback registry (works offline for built-ins)
 BUILTIN_REGISTRY = {
@@ -221,6 +234,187 @@ def cmd_update():
         _install_from_github(info["url"], name)
 
 
+# ── Auth helpers ──────────────────────────────────────────────────────────────
+
+def _load_auth() -> dict:
+    if AUTH_FILE.exists():
+        return json.loads(AUTH_FILE.read_text())
+    return {}
+
+def _save_auth(data: dict):
+    KOPPA_HOME.mkdir(parents=True, exist_ok=True)
+    AUTH_FILE.write_text(json.dumps(data, indent=2))
+    AUTH_FILE.chmod(0o600)
+
+def _supabase_request(method: str, path: str, body=None, token: str = None) -> dict:
+    """Make a request to Supabase REST API."""
+    if SUPABASE_URL.startswith("https://YOUR"):
+        return {"error": "Supabase not configured. Edit src/pkg_manager.py with your project URL and key."}
+    url = SUPABASE_URL + "/rest/v1/" + path
+    headers = {
+        "apikey":       SUPABASE_ANON_KEY,
+        "Content-Type": "application/json",
+        "Prefer":       "return=representation",
+    }
+    if token:
+        headers["Authorization"] = "Bearer " + token
+    data = json.dumps(body).encode() if body else None
+    req  = urllib.request.Request(url, data=data, headers=headers, method=method)
+    try:
+        with urllib.request.urlopen(req, timeout=10) as r:
+            raw = r.read()
+            return json.loads(raw) if raw else {}
+    except urllib.error.HTTPError as e:
+        return {"error": e.read().decode()}
+    except Exception as e:
+        return {"error": str(e)}
+
+def _verify_token(token: str) -> dict | None:
+    """Verify an API token against Supabase. Returns user info or None."""
+    result = _supabase_request("GET", "api_tokens?select=user_id,name&token=eq." + token, token=token)
+    if isinstance(result, list) and result:
+        user_id = result[0]["user_id"]
+        profile = _supabase_request("GET", f"profiles?select=username,avatar_url&id=eq.{user_id}", token=token)
+        if isinstance(profile, list) and profile:
+            return {"user_id": user_id, "username": profile[0].get("username", ""), "token": token}
+    return None
+
+
+# ── Auth commands ─────────────────────────────────────────────────────────────
+
+def cmd_login(token: str = None):
+    """Login to KOPPA Registry."""
+    if token:
+        print("[~] Verifying token…")
+        user = _verify_token(token)
+        if not user:
+            print("[!] Invalid token. Get one from: " + REGISTRY_WEB + "/login.html?cli=1")
+            return
+        _save_auth(user)
+        print(f"[+] Logged in as: {user.get('username') or user.get('user_id')}")
+        return
+
+    # Open browser for token
+    import webbrowser
+    url = REGISTRY_WEB + "/login.html?cli=1"
+    print(f"[~] Opening browser: {url}")
+    webbrowser.open(url)
+    print()
+    print("After logging in, copy your CLI token and run:")
+    print("  koppa pkg login --token <YOUR_TOKEN>")
+
+
+def cmd_logout():
+    """Logout from KOPPA Registry."""
+    if AUTH_FILE.exists():
+        AUTH_FILE.unlink()
+        print("[+] Logged out")
+    else:
+        print("[!] Not logged in")
+
+
+def cmd_whoami():
+    """Show current user."""
+    auth = _load_auth()
+    if not auth or not auth.get("token"):
+        print("[!] Not logged in.  Run: koppa pkg login")
+        return
+    user = auth.get("username") or auth.get("user_id", "unknown")
+    print(f"Logged in as: {user}")
+    print(f"Token:        {auth.get('token', '')[:12]}…")
+
+
+def cmd_token():
+    """Show current API token."""
+    auth = _load_auth()
+    if not auth or not auth.get("token"):
+        print("[!] Not logged in.  Run: koppa pkg login")
+        return
+    print(f"API Token: {auth['token']}")
+    print()
+    print("CLI usage:  koppa pkg login --token " + auth['token'])
+    print("GitHub CI:  set KOPPA_TOKEN secret, then: koppa pkg publish")
+
+
+def cmd_publish():
+    """Publish the current directory as a KOPPA package."""
+    auth = _load_auth()
+    if not auth or not auth.get("token"):
+        print("[!] Not logged in.  Run: koppa pkg login")
+        return
+
+    # Read koppa.json
+    mfile = Path("koppa.json")
+    if not mfile.exists():
+        print("[!] No koppa.json found in current directory.")
+        print("    Run: koppa pkg init")
+        return
+
+    try:
+        pkg = json.loads(mfile.read_text())
+    except Exception as e:
+        print(f"[!] Failed to parse koppa.json: {e}")
+        return
+
+    name    = pkg.get("name", "").strip()
+    version = pkg.get("version", "").strip()
+    desc    = pkg.get("description", "").strip()
+    repo    = pkg.get("repository", pkg.get("url", "")).strip()
+    tags    = pkg.get("tags", pkg.get("keywords", []))
+    license_= pkg.get("license", "MIT")
+    main    = pkg.get("main", "main.kop")
+
+    # Validate
+    import re
+    if not name:
+        print("[!] 'name' is required in koppa.json"); return
+    if not re.match(r'^[a-z0-9][a-z0-9\-]{0,63}$', name):
+        print("[!] Package name must be lowercase letters, numbers, hyphens"); return
+    if not version or not re.match(r'^\d+\.\d+\.\d+$', version):
+        print("[!] 'version' must be semver (e.g. 1.0.0)"); return
+    if not desc:
+        print("[!] 'description' is required in koppa.json"); return
+    if not repo:
+        print("[!] 'repository' or 'url' (GitHub URL) is required in koppa.json"); return
+
+    token = auth["token"]
+    user_id = auth.get("user_id", "")
+
+    print(f"[~] Publishing {name}@{version}…")
+
+    # Upsert package
+    payload = {
+        "name":           name,
+        "description":    desc,
+        "author_id":      user_id,
+        "author_name":    auth.get("username", ""),
+        "latest_version": version,
+        "tags":           tags,
+        "license":        license_,
+        "repo_url":       repo,
+        "updated_at":     __import__("datetime").datetime.utcnow().isoformat() + "Z",
+    }
+    result = _supabase_request("POST", "packages?on_conflict=name", body=payload, token=token)
+    if isinstance(result, dict) and "error" in result:
+        print(f"[!] Publish failed: {result['error']}")
+        return
+
+    pkg_id = result[0]["id"] if isinstance(result, list) and result else None
+    if pkg_id:
+        # Insert version record
+        _supabase_request("POST", "package_versions", body={
+            "package_id":   pkg_id,
+            "version":      version,
+            "entry_file":   main,
+        }, token=token)
+
+    print(f"[+] Published: {name}@{version}")
+    print(f"    View at:   {REGISTRY_WEB}/index.html")
+    print()
+    print("Users can install with:")
+    print(f"  koppa pkg install {name}")
+
+
 def cmd_info(name: str):
     """Show info about a package."""
     registry = _fetch_registry()
@@ -274,43 +468,59 @@ def resolve_package_path(name: str) -> Path | None:
 def main(args: list):
     if not args:
         print("Usage: koppa pkg <command> [args]")
-        print("  install <name|url>   — install a package")
-        print("  uninstall <name>     — remove a package")
-        print("  list                 — list installed")
-        print("  search <query>       — search registry")
-        print("  info <name>          — show package info")
-        print("  init                 — create koppa.json")
-        print("  update               — update all packages")
+        print()
+        print("  install <name|url>         install a package")
+        print("  uninstall <name>           remove a package")
+        print("  list                       list installed packages")
+        print("  search <query>             search registry")
+        print("  info <name>                show package info")
+        print("  init                       create koppa.json")
+        print("  update                     update all packages")
+        print()
+        print("  login [--token TOKEN]      login to registry")
+        print("  logout                     logout")
+        print("  whoami                     show current user")
+        print("  publish                    publish current package")
+        print("  token                      show API token")
         return
 
-    sub = args[0]
+    sub  = args[0]
     rest = args[1:]
 
     if sub == "install":
-        if not rest:
-            print("Usage: koppa pkg install <name|github-url>")
-        else:
-            cmd_install(rest[0])
+        if not rest: print("Usage: koppa pkg install <name|github-url>")
+        else:        cmd_install(rest[0])
     elif sub == "uninstall":
-        if not rest:
-            print("Usage: koppa pkg uninstall <name>")
-        else:
-            cmd_uninstall(rest[0])
+        if not rest: print("Usage: koppa pkg uninstall <name>")
+        else:        cmd_uninstall(rest[0])
     elif sub == "list":
         cmd_list()
     elif sub == "search":
-        if not rest:
-            print("Usage: koppa pkg search <query>")
-        else:
-            cmd_search(rest[0])
+        if not rest: print("Usage: koppa pkg search <query>")
+        else:        cmd_search(rest[0])
     elif sub == "info":
-        if not rest:
-            print("Usage: koppa pkg info <name>")
-        else:
-            cmd_info(rest[0])
+        if not rest: print("Usage: koppa pkg info <name>")
+        else:        cmd_info(rest[0])
     elif sub == "init":
         cmd_init()
     elif sub == "update":
         cmd_update()
+    elif sub == "login":
+        token = None
+        if "--token" in rest:
+            idx = rest.index("--token")
+            token = rest[idx + 1] if idx + 1 < len(rest) else None
+        # Also support KOPPA_TOKEN env var
+        if not token:
+            token = os.environ.get("KOPPA_TOKEN")
+        cmd_login(token)
+    elif sub == "logout":
+        cmd_logout()
+    elif sub == "whoami":
+        cmd_whoami()
+    elif sub == "publish":
+        cmd_publish()
+    elif sub == "token":
+        cmd_token()
     else:
         print(f"Unknown pkg command: {sub}")
