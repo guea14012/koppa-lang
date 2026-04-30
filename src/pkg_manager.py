@@ -101,14 +101,19 @@ def cmd_install(name: str):
         print("    Or install directly:  koppa pkg install https://github.com/user/repo")
         return
 
-    _install_from_github(pkg["url"], name, pkg.get("version", "latest"))
+    _install_from_github(
+        pkg["url"], name,
+        pkg.get("version", "latest"),
+        pkg.get("path")          # subdirectory path inside repo
+    )
 
 
-def _install_from_github(url: str, pkg_name: str = None, version: str = "latest"):
-    """Download and install a package from GitHub."""
-    # Normalise: https://github.com/user/repo → zip URL
+def _install_from_github(url: str, pkg_name: str = None,
+                         version: str = "latest", path: str = None):
+    """Download and install a package from GitHub.
+    path: optional subdirectory inside the repo (e.g. 'packages/koppa-portscan')
+    """
     if "github.com" in url and not url.endswith(".zip"):
-        # Convert to zip archive URL
         parts = url.rstrip("/").split("/")
         if len(parts) >= 5:
             user, repo = parts[-2], parts[-1]
@@ -144,6 +149,15 @@ def _install_from_github(url: str, pkg_name: str = None, version: str = "latest"
             print("[!] Archive is empty")
             return
         src_dir = extracted[0]
+
+        # If path specified, navigate to subdirectory
+        if path:
+            sub = src_dir / path
+            if sub.exists() and sub.is_dir():
+                src_dir = sub
+            else:
+                print(f"[!] Subdirectory '{path}' not found in archive")
+                return
 
         # Install to packages dir
         dest = PACKAGES_DIR / pkg_name
