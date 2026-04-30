@@ -41,8 +41,8 @@ AUTH_FILE     = KOPPA_HOME / "auth.json"
 
 # Supabase config — mirrors www/_config.js
 # Update these after creating your Supabase project
-SUPABASE_URL      = "https://YOUR_PROJECT_ID.supabase.co"
-SUPABASE_ANON_KEY = "YOUR_ANON_KEY_HERE"
+SUPABASE_URL      = "https://uovrlnnwzaqkjsnqhxvq.supabase.co"
+SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVvdnJsbm53emFxa2pzbnFoeHZxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc0ODQxMDcsImV4cCI6MjA5MzA2MDEwN30.WpIBO6duMHUKctnR1d74smB9h2swDfe0-rYEAucf1ns"
 
 # Bundled fallback registry (works offline for built-ins)
 BUILTIN_REGISTRY = {
