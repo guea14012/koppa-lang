@@ -336,6 +336,111 @@ def cmd_token():
     print("GitHub CI:  set KOPPA_TOKEN secret, then: koppa pkg publish")
 
 
+def _security_scan(source: str, filename: str = '') -> dict:
+    """Scan KOPPA source for security issues. Returns score, grade, issues list."""
+    import re
+    issues = []
+    score  = 100
+
+    checks = [
+        (r'(?:password|passwd)\s*=\s*["\'][^"\']{4,}["\']', 'hardcoded_password',    'high',   20),
+        (r'(?:api_key|apikey)\s*=\s*["\'][^"\']{8,}["\']',  'hardcoded_api_key',     'high',   20),
+        (r'(?:secret|token)\s*=\s*["\'][^"\']{12,}["\']',   'hardcoded_secret',      'high',   20),
+        (r'http\.get\(["\']http://',                          'insecure_http',         'medium', 10),
+        (r'os\.exec\s*\([^)]*\+[^)]*\)',                     'exec_injection_risk',   'high',   20),
+        (r'hash\.md5\s*\(',                                   'weak_hash_md5',         'low',     5),
+        (r'\bcrypt\.rc4\b',                                   'weak_cipher_rc4',       'medium', 10),
+    ]
+    for pattern, issue_type, severity, penalty in checks:
+        if re.search(pattern, source, re.IGNORECASE):
+            issues.append({"type": issue_type, "severity": severity,
+                           "file": filename})
+            score -= penalty
+
+    # Unsafe ops without unsafe block
+    unsafe_fns = ['inject.shellcode', 'inject.dll', 'mem.write',
+                  'evasion.patch_amsi', 'evasion.patch_etw']
+    if not re.search(r'unsafe\s*\{', source):
+        for fn in unsafe_fns:
+            if fn in source:
+                issues.append({"type": "missing_unsafe_block", "severity": "high",
+                               "file": filename, "detail": f"{fn} outside unsafe{{}}"})
+                score -= 15
+                break
+
+    score = max(0, min(100, score))
+    grade = 'A' if score >= 90 else 'B' if score >= 75 else 'C' if score >= 60 else 'D' if score >= 40 else 'F'
+    return {"score": score, "grade": grade, "issues": issues}
+
+
+def cmd_audit():
+    """Audit installed packages for security issues."""
+    _ensure_dirs()
+    manifest = _installed_manifest()
+    if not manifest:
+        print("No packages installed. Run: koppa pkg install <name>")
+        return
+
+    RESET  = '\033[0m'
+    RED    = '\033[31m'
+    YELLOW = '\033[33m'
+    GREEN  = '\033[32m'
+    CYAN   = '\033[36m'
+    BOLD   = '\033[1m'
+    SEV_COLOR = {'high': RED, 'medium': YELLOW, 'low': CYAN}
+
+    total_issues = 0
+    total_files  = 0
+    pkg_results  = {}
+
+    for pkg_name in manifest:
+        pkg_dir  = PACKAGES_DIR / pkg_name
+        kop_files = list(pkg_dir.glob("**/*.kop")) if pkg_dir.exists() else []
+        pkg_issues = []
+
+        for kop_file in kop_files:
+            try:
+                source = kop_file.read_text(encoding='utf-8', errors='replace')
+                result = _security_scan(source, kop_file.name)
+                if result['issues']:
+                    pkg_issues.extend(result['issues'])
+                total_files += 1
+            except Exception:
+                pass
+
+        pkg_results[pkg_name] = pkg_issues
+        total_issues += len(pkg_issues)
+
+    print(f"\n{BOLD}KOPPA Security Audit{RESET}")
+    print(f"Scanned {total_files} files across {len(manifest)} packages\n")
+    print("─" * 54)
+
+    clean = 0
+    for pkg_name, issues in pkg_results.items():
+        score = max(0, 100 - len(issues) * 15)
+        grade = 'A' if score >= 90 else 'B' if score >= 75 else 'C' if score >= 60 else 'D' if score >= 40 else 'F'
+        grade_color = GREEN if grade in ('A','B') else YELLOW if grade == 'C' else RED
+
+        if not issues:
+            print(f"  {GREEN}✓{RESET} {pkg_name:30s} {grade_color}{grade}{RESET} No issues")
+            clean += 1
+        else:
+            print(f"  {RED}✗{RESET} {BOLD}{pkg_name}{RESET}")
+            for issue in issues:
+                c = SEV_COLOR.get(issue['severity'], '')
+                print(f"    {c}[{issue['severity'].upper():6s}]{RESET} {issue['type']}"
+                      + (f" ({issue.get('file','')})" if issue.get('file') else ''))
+
+    print("─" * 54)
+    if total_issues == 0:
+        print(f"\n{GREEN}✓ All {len(manifest)} packages clean — no security issues found{RESET}\n")
+    else:
+        print(f"\n{RED}✗ {total_issues} issue(s) found in {len(manifest) - clean} package(s){RESET}")
+        print(f"  {clean}/{len(manifest)} packages clean\n")
+        print("Tip: Use  unsafe {{ }}  blocks for OS-level operations.")
+        print("     Avoid hardcoded credentials in package source.\n")
+
+
 def cmd_publish():
     """Publish the current directory as a KOPPA package."""
     auth = _load_auth()
@@ -482,6 +587,7 @@ def main(args: list):
         print("  whoami                     show current user")
         print("  publish                    publish current package")
         print("  token                      show API token")
+        print("  audit                      scan installed packages for security issues")
         return
 
     sub  = args[0]
@@ -522,5 +628,7 @@ def main(args: list):
         cmd_publish()
     elif sub == "token":
         cmd_token()
+    elif sub == "audit":
+        cmd_audit()
     else:
         print(f"Unknown pkg command: {sub}")
