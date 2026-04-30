@@ -1,17 +1,17 @@
 {
   "name": "koppa-lang",
   "displayName": "KOPPA Language Support",
-  "description": "Syntax highlighting and snippets for KOPPA — Advanced Pentesting DSL",
-  "version": "2.0.1",
+  "description": "Syntax highlighting, snippets, autocomplete, and diagnostics for KOPPA — Advanced Pentesting DSL",
+  "version": "3.0.1",
   "publisher": "guea14012",
   "repository": { "type": "git", "url": "https://github.com/guea14012/koppa-lang" },
   "homepage": "https://guea14012.github.io/koppa-lang",
   "license": "MIT",
   "engines": { "vscode": "^1.75.0" },
-  "categories": ["Programming Languages", "Snippets"],
-  "keywords": ["koppa", "pentest", "security", "dsl"],
-  "activationEvents": [],
-  "main": "",
+  "categories": ["Programming Languages", "Snippets", "Linters"],
+  "keywords": ["koppa", "pentest", "security", "dsl", "cybersecurity", "redteam"],
+  "activationEvents": ["onLanguage:koppa"],
+  "main": "./extension.js",
   "contributes": {
     "languages": [{
       "id": "koppa",
@@ -27,6 +27,53 @@
     "snippets": [{
       "language": "koppa",
       "path": "./snippets/koppa.json"
+    }],
+    "configuration": {
+      "title": "KOPPA",
+      "properties": {
+        "koppa.lsp.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable KOPPA Language Server (requires pygls: pip install pygls lsprotocol)"
+        },
+        "koppa.lsp.pythonPath": {
+          "type": "string",
+          "default": "python",
+          "description": "Path to Python interpreter for KOPPA LSP"
+        },
+        "koppa.lsp.serverPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to koppa_lsp.py (leave empty for auto-detect)"
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "koppa.runFile",
+        "title": "KOPPA: Run Current File",
+        "icon": "$(play)"
+      },
+      {
+        "command": "koppa.openPlayground",
+        "title": "KOPPA: Open Web Playground"
+      },
+      {
+        "command": "koppa.openRegistry",
+        "title": "KOPPA: Browse Package Registry"
+      }
+    ],
+    "menus": {
+      "editor/title": [{
+        "command": "koppa.runFile",
+        "when": "resourceExtname == .kop",
+        "group": "navigation"
+      }]
+    },
+    "keybindings": [{
+      "command": "koppa.runFile",
+      "key": "ctrl+shift+r",
+      "when": "resourceExtname == .kop"
     }]
   }
 }
