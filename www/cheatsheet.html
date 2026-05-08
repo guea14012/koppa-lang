@@ -1,0 +1,907 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>KOPPA Cheat Sheet — Quick Reference</title>
+  <link rel="canonical" href="https://guea14012.github.io/koppa-lang/cheatsheet" />
+  <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+  <style>
+    :root {
+      --bg:      #0a0a1a;
+      --card:    #1a1a2e;
+      --card2:   #12122a;
+      --border:  #3a3a5e;
+      --border2: #2a2a4e;
+      --gold:    #ffcc00;
+      --cyan:    #00ffcc;
+      --pink:    #ff66aa;
+      --purple:  #aa66ff;
+      --text:    #e0e0ff;
+      --muted:   #8080a0;
+      --green:   #00ff88;
+      --red:     #ff7b72;
+      --orange:  #ffa657;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      font-size: 14px;
+      line-height: 1.6;
+      overflow-x: hidden;
+    }
+
+    /* ── Nav ── */
+    nav {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 40px; height: 62px;
+      background: var(--card); border-bottom: 1px solid var(--border);
+      position: sticky; top: 0; z-index: 100; gap: 16px;
+    }
+    .nav-logo {
+      font-size: 20px; font-weight: 800; letter-spacing: 1px;
+      color: var(--gold); text-decoration: none;
+    }
+    .nav-logo span { color: var(--cyan); }
+    .nav-links { display: flex; align-items: center; gap: 24px; }
+    .nav-links a { color: var(--muted); text-decoration: none; font-size: 14px; transition: color .15s; }
+    .nav-links a:hover { color: var(--text); }
+    .nav-links a.active { color: var(--cyan); }
+    .nav-links a.cta {
+      background: var(--gold); color: #0a0a1a;
+      padding: 7px 16px; border-radius: 4px;
+      font-weight: 600; font-size: 13px;
+    }
+    .nav-links a.cta:hover { background: #ffe033; color: #0a0a1a; }
+
+    /* ── Page header ── */
+    .page-header {
+      background: linear-gradient(180deg, #12122a 0%, var(--bg) 100%);
+      border-bottom: 1px solid var(--border);
+      padding: 48px 40px 40px; text-align: center;
+    }
+    .page-header .badge {
+      display: inline-block; font-size: 12px; font-weight: 600;
+      background: rgba(255,204,0,.08); color: var(--gold);
+      border: 1px solid rgba(255,204,0,.3);
+      padding: 4px 14px; border-radius: 20px; letter-spacing: .5px;
+      margin-bottom: 16px;
+    }
+    .page-header h1 { font-size: 36px; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 10px; }
+    .page-header h1 span { color: var(--gold); }
+    .page-header p { color: var(--muted); font-size: 15px; }
+
+    /* ── Layout ── */
+    .container { max-width: 1200px; margin: 0 auto; padding: 40px 24px 80px; }
+
+    /* ── Section title ── */
+    .sec-title {
+      font-size: 11px; font-weight: 700; letter-spacing: 2px;
+      text-transform: uppercase; color: var(--muted);
+      margin: 40px 0 16px; padding-bottom: 8px;
+      border-bottom: 1px solid var(--border2);
+    }
+    .sec-title span { color: var(--cyan); }
+
+    /* ── Grid ── */
+    .grid { display: grid; gap: 12px; }
+    .grid-2 { grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); }
+    .grid-3 { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+    .grid-4 { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+
+    /* ── Card ── */
+    .card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 10px; padding: 20px;
+      display: flex; flex-direction: column; gap: 10px;
+    }
+    .card-title {
+      font-size: 12px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 1px; color: var(--muted); margin-bottom: 2px;
+    }
+    .card h3 { font-size: 15px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+
+    /* ── Code block ── */
+    pre, code {
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    }
+    pre {
+      background: #0d1117; border: 1px solid var(--border2);
+      border-radius: 6px; padding: 14px 16px;
+      font-size: 12.5px; line-height: 1.9; overflow-x: auto;
+    }
+    .inline-code {
+      background: #0d1117; border: 1px solid var(--border2);
+      border-radius: 4px; padding: 1px 6px;
+      font-size: 12px; color: var(--cyan);
+    }
+
+    /* ── Syntax colours ── */
+    .kw  { color: var(--red); }
+    .fn  { color: var(--purple); }
+    .str { color: var(--cyan); }
+    .num { color: var(--gold); }
+    .cmt { color: var(--muted); font-style: italic; }
+    .ok  { color: var(--green); }
+    .op  { color: var(--orange); }
+    .mod { color: var(--pink); }
+
+    /* ── Quick-ref table ── */
+    .ref-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .ref-table th {
+      text-align: left; font-size: 11px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 1px;
+      color: var(--muted); padding: 6px 12px;
+      border-bottom: 1px solid var(--border2);
+    }
+    .ref-table td {
+      padding: 7px 12px; border-bottom: 1px solid var(--border2);
+      vertical-align: top;
+    }
+    .ref-table tr:last-child td { border-bottom: none; }
+    .ref-table td:first-child {
+      font-family: "SFMono-Regular", Consolas, monospace;
+      color: var(--cyan); white-space: nowrap;
+    }
+    .ref-table td:nth-child(2) { color: var(--muted); }
+    .ref-table td:nth-child(3) { color: var(--green); font-family: "SFMono-Regular", Consolas, monospace; font-size: 12px; }
+
+    /* ── Tag pill ── */
+    .tag {
+      display: inline-block; font-size: 10px; font-weight: 700;
+      padding: 2px 7px; border-radius: 4px; letter-spacing: .5px;
+      text-transform: uppercase; margin-right: 4px;
+    }
+    .tag-net    { background: rgba(0,255,204,.1);   color: var(--cyan);   }
+    .tag-sec    { background: rgba(255,102,170,.1); color: var(--pink);   }
+    .tag-crypto { background: rgba(170,102,255,.1); color: var(--purple); }
+    .tag-core   { background: rgba(255,204,0,.1);   color: var(--gold);   }
+    .tag-sys    { background: rgba(255,122,102,.1); color: var(--orange); }
+
+    /* ── Module quick-ref card ── */
+    .mod-ref-card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 10px; padding: 18px 20px; gap: 8px;
+      display: flex; flex-direction: column;
+    }
+    .mod-ref-card .mod-name {
+      font-size: 14px; font-weight: 700; color: var(--text);
+      margin-bottom: 6px; display: flex; align-items: center; gap: 8px;
+    }
+    .mod-ref-card table { width: 100%; border-collapse: collapse; }
+    .mod-ref-card td {
+      padding: 3px 0;
+      font-family: "SFMono-Regular", Consolas, monospace;
+      font-size: 11.5px; color: var(--muted);
+      border-bottom: 1px solid var(--border2);
+      vertical-align: top;
+    }
+    .mod-ref-card tr:last-child td { border-bottom: none; }
+    .mod-ref-card td:first-child { color: var(--green); white-space: nowrap; padding-right: 8px; }
+    .mod-ref-card td:last-child  { color: var(--muted); font-size: 11px; font-family: inherit; }
+
+    /* ── CLI strip ── */
+    .cli-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 8px; }
+    .cli-row {
+      display: flex; align-items: flex-start; gap: 12px;
+      background: var(--card); border: 1px solid var(--border2);
+      border-radius: 6px; padding: 10px 14px;
+    }
+    .cli-row .cmd {
+      font-family: "SFMono-Regular", Consolas, monospace;
+      font-size: 12px; color: var(--green); flex: 1;
+    }
+    .cli-row .desc { font-size: 12px; color: var(--muted); padding-top: 1px; }
+
+    /* ── Top nav anchor links ── */
+    .anchor-bar {
+      display: flex; flex-wrap: wrap; gap: 8px;
+      padding: 16px 24px; background: var(--card2);
+      border-bottom: 1px solid var(--border2);
+      position: sticky; top: 62px; z-index: 90;
+    }
+    .anchor-bar a {
+      color: var(--muted); text-decoration: none;
+      font-size: 12px; font-weight: 500; padding: 4px 10px;
+      border: 1px solid var(--border2); border-radius: 20px;
+      transition: all .15s;
+    }
+    .anchor-bar a:hover { color: var(--cyan); border-color: var(--cyan); }
+
+    /* ── Footer ── */
+    footer {
+      border-top: 1px solid var(--border); text-align: center;
+      padding: 28px 24px; color: var(--muted); font-size: 13px;
+      margin-top: 20px; line-height: 2;
+    }
+    footer a { color: var(--cyan); text-decoration: none; }
+    footer a:hover { text-decoration: underline; }
+    footer strong { color: var(--text); }
+
+    @media (max-width: 680px) {
+      nav { padding: 0 16px; }
+      .nav-links { gap: 14px; }
+      .page-header { padding: 36px 20px 28px; }
+      .page-header h1 { font-size: 26px; }
+      .container { padding: 28px 16px 60px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Nav -->
+<nav>
+  <a class="nav-logo" href="index.html">KOP<span>PA</span></a>
+  <div class="nav-links">
+    <a href="index.html#download">Download</a>
+    <a href="index.html#demo">Examples</a>
+    <a href="cheatsheet.html" class="active">Cheat Sheet</a>
+    <a href="https://github.com/guea14012/koppa-lang">GitHub</a>
+    <a href="playground.html" style="color:var(--cyan)">&#9654; Playground</a>
+    <a href="https://guea14012.github.io/koppa-registry-/" class="cta">Packages</a>
+  </div>
+</nav>
+
+<!-- Anchor bar -->
+<div class="anchor-bar">
+  <a href="#basics">Basics</a>
+  <a href="#types">Types</a>
+  <a href="#functions">Functions</a>
+  <a href="#control">Control Flow</a>
+  <a href="#errors">Errors</a>
+  <a href="#pipeline">Pipeline</a>
+  <a href="#modules">Modules</a>
+  <a href="#api-network">Network API</a>
+  <a href="#api-crypto">Crypto API</a>
+  <a href="#api-web">Web API</a>
+  <a href="#api-core">Core API</a>
+  <a href="#cli">CLI</a>
+</div>
+
+<!-- Page header -->
+<div class="page-header">
+  <div class="badge">v2.0.1</div>
+  <h1>KOPPA <span>Cheat Sheet</span></h1>
+  <p>Quick reference for syntax, modules, and CLI commands</p>
+</div>
+
+<div class="container">
+
+  <!-- ── BASICS ── -->
+  <div class="sec-title" id="basics"><span>#</span> Basics</div>
+  <div class="grid grid-2">
+
+    <div class="card">
+      <div class="card-title">Variables</div>
+      <pre><span class="kw">let</span> name  = <span class="str">"Alice"</span>       <span class="cmt"># immutable</span>
+<span class="kw">var</span> count = <span class="num">0</span>            <span class="cmt"># mutable</span>
+<span class="kw">const</span> MAX = <span class="num">100</span>          <span class="cmt"># constant</span>
+
+count = count + <span class="num">1</span>        <span class="cmt"># reassign var</span></pre>
+    </div>
+
+    <div class="card">
+      <div class="card-title">String Interpolation &amp; Comments</div>
+      <pre><span class="cmt"># This is a comment</span>
+
+<span class="kw">let</span> host = <span class="str">"192.168.1.1"</span>
+<span class="kw">let</span> port = <span class="num">80</span>
+log.info(<span class="str">"Scanning {host}:{port}"</span>)
+<span class="cmt"># → "Scanning 192.168.1.1:80"</span></pre>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Operators</div>
+      <pre><span class="cmt"># Arithmetic</span>
+<span class="num">10</span> + <span class="num">3</span>   <span class="num">10</span> - <span class="num">3</span>   <span class="num">10</span> * <span class="num">3</span>   <span class="num">10</span> / <span class="num">3</span>
+
+<span class="cmt"># Comparison</span>
+a == b   a != b   a &lt; b   a &gt;= b
+
+<span class="cmt"># Logical</span>
+a <span class="kw">and</span> b   a <span class="kw">or</span> b   <span class="kw">not</span> a</pre>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Import</div>
+      <pre><span class="kw">import</span> log
+<span class="kw">import</span> log, scan, http, crypto
+
+<span class="cmt"># Then call as:</span>
+log.info(<span class="str">"hello"</span>)
+scan.tcp(<span class="str">"target"</span>, <span class="num">80</span>)</pre>
+    </div>
+
+  </div>
+
+  <!-- ── TYPES ── -->
+  <div class="sec-title" id="types"><span>#</span> Types</div>
+  <div class="grid grid-2">
+
+    <div class="card">
+      <div class="card-title">Primitives</div>
+      <pre><span class="kw">let</span> s = <span class="str">"hello"</span>          <span class="cmt"># string</span>
+<span class="kw">let</span> n = <span class="num">42</span>              <span class="cmt"># int</span>
+<span class="kw">let</span> f = <span class="num">3.14</span>            <span class="cmt"># float</span>
+<span class="kw">let</span> b = <span class="kw">true</span>            <span class="cmt"># bool (true/false)</span>
+<span class="kw">let</span> x = <span class="kw">null</span>            <span class="cmt"># null</span></pre>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Arrays</div>
+      <pre><span class="kw">let</span> ports = [<span class="num">22</span>, <span class="num">80</span>, <span class="num">443</span>]
+
+ports.len              <span class="cmt"># 3</span>
+ports.push(<span class="num">8080</span>)       <span class="cmt"># append</span>
+ports[<span class="num">0</span>]               <span class="cmt"># first element</span>
+
+<span class="kw">for</span> p <span class="kw">in</span> ports { <span class="cmt">...</span> }</pre>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Dicts</div>
+      <pre><span class="kw">let</span> host = {
+    ip:   <span class="str">"10.0.0.1"</span>,
+    port: <span class="num">443</span>,
+    open: <span class="kw">true</span>
+}
+
+host.ip           <span class="cmt"># "10.0.0.1"</span>
+host["port"]      <span class="cmt"># 443</span></pre>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Result Type</div>
+      <pre><span class="kw">fn</span> <span class="fn">safe_scan</span>(host, port) {
+    <span class="kw">try</span> {
+        <span class="kw">return</span> <span class="ok">Ok</span>(scan.tcp(host, port))
+    } <span class="kw">catch</span>(e) {
+        <span class="kw">return</span> <span class="ok">Err</span>(e)
+    }
+}
+
+<span class="kw">match</span> safe_scan(<span class="str">"t.com"</span>, <span class="num">80</span>) {
+    <span class="ok">Ok</span>(r)  => log.success(r),
+    <span class="ok">Err</span>(e) => log.error(e)
+}</pre>
+    </div>
+
+  </div>
+
+  <!-- ── FUNCTIONS ── -->
+  <div class="sec-title" id="functions"><span>#</span> Functions</div>
+  <div class="grid grid-2">
+
+    <div class="card">
+      <div class="card-title">Basic Function</div>
+      <pre><span class="kw">fn</span> <span class="fn">greet</span>(name) {
+    <span class="kw">return</span> <span class="str">"Hello {name}"</span>
+}
+
+<span class="kw">let</span> msg = greet(<span class="str">"world"</span>)
+log.info(msg)</pre>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Async Function</div>
+      <pre><span class="kw">async fn</span> <span class="fn">fetch</span>(url) {
+    <span class="kw">let</span> resp = http.get(url)
+    <span class="kw">emit</span> resp
+}
+
+<span class="cmt"># Run many concurrently</span>
+<span class="kw">parallel</span> {
+    fetch(<span class="str">"http://a.com"</span>)
+    fetch(<span class="str">"http://b.com"</span>)
+}</pre>
+    </div>
+
+  </div>
+
+  <!-- ── CONTROL FLOW ── -->
+  <div class="sec-title" id="control"><span>#</span> Control Flow</div>
+  <div class="grid grid-2">
+
+    <div class="card">
+      <div class="card-title">If / Elif / Else</div>
+      <pre><span class="kw">if</span> score > <span class="num">90</span> {
+    log.success(<span class="str">"Critical"</span>)
+} <span class="kw">elif</span> score > <span class="num">50</span> {
+    log.warn(<span class="str">"Medium"</span>)
+} <span class="kw">else</span> {
+    log.info(<span class="str">"Low"</span>)
+}</pre>
+    </div>
+
+    <div class="card">
+      <div class="card-title">For Loop</div>
+      <pre><span class="kw">for</span> port <span class="kw">in</span> [<span class="num">22</span>, <span class="num">80</span>, <span class="num">443</span>] {
+    log.info(<span class="str">"Port: {port}"</span>)
+}
+
+<span class="cmt"># with condition</span>
+<span class="kw">for</span> item <span class="kw">in</span> list {
+    <span class="kw">if</span> item == <span class="kw">null</span> { <span class="kw">continue</span> }
+    process(item)
+}</pre>
+    </div>
+
+    <div class="card">
+      <div class="card-title">While Loop</div>
+      <pre><span class="kw">var</span> i = <span class="num">0</span>
+<span class="kw">while</span> i < <span class="num">10</span> {
+    log.info(<span class="str">"i = {i}"</span>)
+    i = i + <span class="num">1</span>
+}</pre>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Match (Pattern)</div>
+      <pre><span class="kw">match</span> service {
+    <span class="str">"http"</span>  => http.scan(target),
+    <span class="str">"ssh"</span>   => ssh.audit(target),
+    <span class="str">"smb"</span>   => smb.enum(target),
+    _       => log.info(<span class="str">"Unknown: {service}"</span>)
+}</pre>
+    </div>
+
+  </div>
+
+  <!-- ── ERROR HANDLING ── -->
+  <div class="sec-title" id="errors"><span>#</span> Error Handling</div>
+  <div class="grid grid-2">
+
+    <div class="card">
+      <div class="card-title">Try / Catch</div>
+      <pre><span class="kw">try</span> {
+    <span class="kw">let</span> data = fs.read(<span class="str">"/etc/shadow"</span>)
+    log.info(data)
+} <span class="kw">catch</span>(err) {
+    log.error(<span class="str">"Failed: {err}"</span>)
+}</pre>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Throw</div>
+      <pre><span class="kw">fn</span> <span class="fn">divide</span>(a, b) {
+    <span class="kw">if</span> b == <span class="num">0</span> {
+        <span class="kw">throw</span> <span class="str">"Division by zero"</span>
+    }
+    <span class="kw">return</span> a / b
+}</pre>
+    </div>
+
+  </div>
+
+  <!-- ── PIPELINE ── -->
+  <div class="sec-title" id="pipeline"><span>#</span> Pipeline Operator</div>
+  <div class="grid grid-2">
+
+    <div class="card">
+      <div class="card-title">Chain Operations with |&gt;</div>
+      <pre>target
+    <span class="op">|&gt;</span> recon.dns_resolve()
+    <span class="op">|&gt;</span> scan.tcp([<span class="num">80</span>, <span class="num">443</span>])
+    <span class="op">|&gt;</span> parse.html_links()
+    <span class="op">|&gt;</span> report.save(<span class="str">"out.json"</span>)</pre>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Parallel Block</div>
+      <pre><span class="kw">parallel</span> {
+    scan_port(<span class="str">"target.com"</span>, <span class="num">80</span>)
+    scan_port(<span class="str">"target.com"</span>, <span class="num">443</span>)
+    scan_port(<span class="str">"target.com"</span>, <span class="num">8080</span>)
+}
+<span class="cmt"># all three run concurrently</span></pre>
+    </div>
+
+  </div>
+
+  <!-- ── MODULE OVERVIEW ── -->
+  <div class="sec-title" id="modules"><span>#</span> All Built-in Modules</div>
+  <div class="grid grid-3">
+
+    <div class="card">
+      <div class="card-title"><span class="tag tag-net">Network</span></div>
+      <table class="ref-table">
+        <tr><td>scan</td><td>TCP/UDP port scan, banner grab</td></tr>
+        <tr><td>net</td><td>Low-level sockets, ping, geo-IP, CIDR</td></tr>
+        <tr><td>dns</td><td>Resolve, reverse, MX, TXT, zone transfer</td></tr>
+        <tr><td>ssl</td><td>TLS cert, fingerprint, HSTS, SAN</td></tr>
+        <tr><td>http</td><td>GET/POST, headers, body</td></tr>
+        <tr><td>ftp</td><td>Anonymous check, listing</td></tr>
+        <tr><td>smtp</td><td>Banner, VRFY user enumeration</td></tr>
+        <tr><td>recon</td><td>DNS+port combined recon</td></tr>
+        <tr><td>enum</td><td>Service enumeration helpers</td></tr>
+      </table>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><span class="tag tag-sec">Security</span> &amp; <span class="tag tag-crypto">Crypto</span></div>
+      <table class="ref-table">
+        <tr><td>fuzz</td><td>Dir brute-force, SQLi/XSS quick-scan</td></tr>
+        <tr><td>brute</td><td>HTTP auth, FTP brute-force</td></tr>
+        <tr><td>parse</td><td>HTML, forms, secret extraction</td></tr>
+        <tr><td>report</td><td>HTML/MD/CSV pentest reports</td></tr>
+        <tr><td>hash</td><td>MD5, SHA256, SHA512, NTLM, HMAC</td></tr>
+        <tr><td>encode</td><td>Base64, hex, URL, XOR, ROT13</td></tr>
+        <tr><td>crypto</td><td>AES, RSA encrypt/decrypt</td></tr>
+        <tr><td>jwt</td><td>Decode, forge, crack, none-alg</td></tr>
+      </table>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><span class="tag tag-core">Core</span> &amp; <span class="tag tag-sys">System</span></div>
+      <table class="ref-table">
+        <tr><td>str</td><td>String utilities (30+ functions)</td></tr>
+        <tr><td>list</td><td>Array utilities (30+ functions)</td></tr>
+        <tr><td>math</td><td>Arithmetic, rounding, random</td></tr>
+        <tr><td>rand</td><td>Random numbers, UUIDs</td></tr>
+        <tr><td>regex</td><td>Match, extract, replace, split</td></tr>
+        <tr><td>json</td><td>Parse/stringify JSON</td></tr>
+        <tr><td>fs</td><td>Read, write, list, glob files</td></tr>
+        <tr><td>os</td><td>Exec commands, env vars, hostname</td></tr>
+        <tr><td>time</td><td>Now, timestamp, sleep, date</td></tr>
+        <tr><td>fmt / color</td><td>Output formatting</td></tr>
+        <tr><td>log</td><td>info / warn / error / success / debug</td></tr>
+      </table>
+    </div>
+
+  </div>
+
+  <!-- ── NETWORK API ── -->
+  <div class="sec-title" id="api-network"><span>#</span> Network API Quick Reference</div>
+  <div class="grid grid-2">
+
+    <div class="mod-ref-card">
+      <div class="mod-name"><span class="tag tag-net">Net</span> scan</div>
+      <table>
+        <tr><td>scan.tcp(host, port)</td><td>→ bool — port open?</td></tr>
+        <tr><td>scan.tcp(host, port, timeout)</td><td>→ bool</td></tr>
+        <tr><td>scan.service(port)</td><td>→ string ("http", "ssh" ...)</td></tr>
+      </table>
+    </div>
+
+    <div class="mod-ref-card">
+      <div class="mod-name"><span class="tag tag-net">Net</span> net</div>
+      <table>
+        <tr><td>net.tcp_connect(host, port)</td><td>→ bool</td></tr>
+        <tr><td>net.tcp_banner(host, port)</td><td>→ string</td></tr>
+        <tr><td>net.ping(host)</td><td>→ {success, output}</td></tr>
+        <tr><td>net.geo_ip(ip)</td><td>→ {country, city, isp}</td></tr>
+        <tr><td>net.local_ip()</td><td>→ string</td></tr>
+        <tr><td>net.public_ip()</td><td>→ string</td></tr>
+        <tr><td>net.port_range(host, 1, 1024)</td><td>→ array of open ports</td></tr>
+        <tr><td>net.cidr_hosts("10.0.0.0/24")</td><td>→ array of IPs</td></tr>
+      </table>
+    </div>
+
+    <div class="mod-ref-card">
+      <div class="mod-name"><span class="tag tag-net">Net</span> dns</div>
+      <table>
+        <tr><td>dns.resolve(domain)</td><td>→ string (IP)</td></tr>
+        <tr><td>dns.resolve_all(domain)</td><td>→ array</td></tr>
+        <tr><td>dns.reverse(ip)</td><td>→ string</td></tr>
+        <tr><td>dns.mx(domain)</td><td>→ array</td></tr>
+        <tr><td>dns.txt(domain)</td><td>→ array</td></tr>
+        <tr><td>dns.zone_transfer(domain, ns)</td><td>→ array</td></tr>
+      </table>
+    </div>
+
+    <div class="mod-ref-card">
+      <div class="mod-name"><span class="tag tag-net">Net</span> ssl</div>
+      <table>
+        <tr><td>ssl.get_cert(host, port)</td><td>→ dict (certificate)</td></tr>
+        <tr><td>ssl.verify(host, port)</td><td>→ bool</td></tr>
+        <tr><td>ssl.fingerprint(host, port)</td><td>→ string (SHA256)</td></tr>
+        <tr><td>ssl.expiry(host, port)</td><td>→ string</td></tr>
+        <tr><td>ssl.issuer(host, port)</td><td>→ string</td></tr>
+        <tr><td>ssl.hsts(host)</td><td>→ bool</td></tr>
+        <tr><td>ssl.is_expired(host, port)</td><td>→ bool</td></tr>
+        <tr><td>ssl.san(host, port)</td><td>→ array of domains</td></tr>
+      </table>
+    </div>
+
+  </div>
+
+  <!-- ── CRYPTO API ── -->
+  <div class="sec-title" id="api-crypto"><span>#</span> Crypto API Quick Reference</div>
+  <div class="grid grid-2">
+
+    <div class="mod-ref-card">
+      <div class="mod-name"><span class="tag tag-crypto">Crypto</span> hash</div>
+      <table>
+        <tr><td>hash.md5(text)</td><td>→ string</td></tr>
+        <tr><td>hash.sha256(text)</td><td>→ string</td></tr>
+        <tr><td>hash.sha512(text)</td><td>→ string</td></tr>
+        <tr><td>hash.ntlm(password)</td><td>→ string</td></tr>
+        <tr><td>hash.identify(hash_str)</td><td>→ "MD5 or NTLM" ...</td></tr>
+        <tr><td>hash.crack(hash, wordlist)</td><td>→ {cracked, password}</td></tr>
+        <tr><td>hash.file(path)</td><td>→ {md5, sha1, sha256}</td></tr>
+      </table>
+    </div>
+
+    <div class="mod-ref-card">
+      <div class="mod-name"><span class="tag tag-crypto">Crypto</span> encode</div>
+      <table>
+        <tr><td>encode.b64_encode(text)</td><td>→ string</td></tr>
+        <tr><td>encode.b64_decode(text)</td><td>→ string</td></tr>
+        <tr><td>encode.hex_encode(text)</td><td>→ string</td></tr>
+        <tr><td>encode.url_encode(text)</td><td>→ string</td></tr>
+        <tr><td>encode.xor(text, key)</td><td>→ string</td></tr>
+        <tr><td>encode.rot13(text)</td><td>→ string</td></tr>
+        <tr><td>encode.detect(text)</td><td>→ "base64", "hex" ...</td></tr>
+      </table>
+    </div>
+
+    <div class="mod-ref-card">
+      <div class="mod-name"><span class="tag tag-crypto">Crypto</span> jwt</div>
+      <table>
+        <tr><td>jwt.decode(token)</td><td>→ {header, payload, sig}</td></tr>
+        <tr><td>jwt.verify(token, secret)</td><td>→ bool</td></tr>
+        <tr><td>jwt.none_alg(token)</td><td>→ forged token (none attack)</td></tr>
+        <tr><td>jwt.crack(token, wordlist)</td><td>→ {cracked, secret}</td></tr>
+        <tr><td>jwt.forge(payload, secret)</td><td>→ string</td></tr>
+        <tr><td>jwt.is_expired(token)</td><td>→ bool</td></tr>
+      </table>
+    </div>
+
+    <div class="mod-ref-card">
+      <div class="mod-name"><span class="tag tag-sec">Security</span> fuzz</div>
+      <table>
+        <tr><td>fuzz.dirs(url, wordlist)</td><td>→ array of {url, status}</td></tr>
+        <tr><td>fuzz.params(url, wordlist)</td><td>→ array</td></tr>
+        <tr><td>fuzz.sqli_quick(url, param)</td><td>→ array of findings</td></tr>
+        <tr><td>fuzz.xss_quick(url, param)</td><td>→ array of findings</td></tr>
+        <tr><td>fuzz.payloads_sqli()</td><td>→ array of payload strings</td></tr>
+        <tr><td>fuzz.payloads_xss()</td><td>→ array of payload strings</td></tr>
+        <tr><td>fuzz.payloads_lfi()</td><td>→ array</td></tr>
+      </table>
+    </div>
+
+  </div>
+
+  <!-- ── WEB API ── -->
+  <div class="sec-title" id="api-web"><span>#</span> Web &amp; Recon API</div>
+  <div class="grid grid-2">
+
+    <div class="mod-ref-card">
+      <div class="mod-name"><span class="tag tag-net">Net</span> http</div>
+      <table>
+        <tr><td>http.get(url)</td><td>→ {status, headers, body}</td></tr>
+        <tr><td>http.post(url, data)</td><td>→ {status, headers, body}</td></tr>
+      </table>
+    </div>
+
+    <div class="mod-ref-card">
+      <div class="mod-name"><span class="tag tag-sec">Security</span> parse</div>
+      <table>
+        <tr><td>parse.html_links(html)</td><td>→ array of URLs</td></tr>
+        <tr><td>parse.html_forms(html)</td><td>→ array of {action, method, inputs}</td></tr>
+        <tr><td>parse.html_title(html)</td><td>→ string</td></tr>
+        <tr><td>parse.extract_emails(text)</td><td>→ array</td></tr>
+        <tr><td>parse.extract_ips(text)</td><td>→ array</td></tr>
+        <tr><td>parse.extract_secrets(text)</td><td>→ array of {type, value}</td></tr>
+        <tr><td>parse.url_parts(url)</td><td>→ {scheme, host, path, query}</td></tr>
+      </table>
+    </div>
+
+    <div class="mod-ref-card">
+      <div class="mod-name"><span class="tag tag-sec">Security</span> report</div>
+      <table>
+        <tr><td>report.finding(title, severity, desc)</td><td>→ dict</td></tr>
+        <tr><td>report.html(findings, title)</td><td>→ string (HTML)</td></tr>
+        <tr><td>report.markdown(findings, title)</td><td>→ string</td></tr>
+        <tr><td>report.save(findings, path, fmt)</td><td>→ path</td></tr>
+        <tr><td>report.terminal(findings)</td><td>→ string</td></tr>
+        <tr><td>report.summary(findings)</td><td>→ {total, by_severity}</td></tr>
+      </table>
+    </div>
+
+    <div class="mod-ref-card">
+      <div class="mod-name"><span class="tag tag-core">Core</span> log</div>
+      <table>
+        <tr><td>log.info("msg")</td><td>white info message</td></tr>
+        <tr><td>log.success("msg")</td><td>green success</td></tr>
+        <tr><td>log.warn("msg")</td><td>yellow warning</td></tr>
+        <tr><td>log.error("msg")</td><td>red error</td></tr>
+        <tr><td>log.debug("msg")</td><td>grey debug (verbose)</td></tr>
+      </table>
+    </div>
+
+  </div>
+
+  <!-- ── CORE API ── -->
+  <div class="sec-title" id="api-core"><span>#</span> Core API</div>
+  <div class="grid grid-2">
+
+    <div class="mod-ref-card">
+      <div class="mod-name"><span class="tag tag-core">Core</span> str</div>
+      <table>
+        <tr><td>str.upper(s)</td><td>→ string</td></tr>
+        <tr><td>str.lower(s)</td><td>→ string</td></tr>
+        <tr><td>str.split(s, sep)</td><td>→ array</td></tr>
+        <tr><td>str.join(sep, arr)</td><td>→ string</td></tr>
+        <tr><td>str.contains(s, sub)</td><td>→ bool</td></tr>
+        <tr><td>str.replace(s, old, new)</td><td>→ string</td></tr>
+        <tr><td>str.strip(s)</td><td>→ string</td></tr>
+        <tr><td>str.len(s)</td><td>→ int</td></tr>
+        <tr><td>str.startswith(s, prefix)</td><td>→ bool</td></tr>
+        <tr><td>str.endswith(s, suffix)</td><td>→ bool</td></tr>
+        <tr><td>str.is_digit(s)</td><td>→ bool</td></tr>
+        <tr><td>str.truncate(s, n)</td><td>→ string</td></tr>
+      </table>
+    </div>
+
+    <div class="mod-ref-card">
+      <div class="mod-name"><span class="tag tag-sys">System</span> fs &amp; os &amp; time</div>
+      <table>
+        <tr><td>fs.read(path)</td><td>→ string</td></tr>
+        <tr><td>fs.write(path, content)</td><td>→ null</td></tr>
+        <tr><td>fs.append(path, content)</td><td>→ null</td></tr>
+        <tr><td>fs.exists(path)</td><td>→ bool</td></tr>
+        <tr><td>fs.list(path)</td><td>→ array</td></tr>
+        <tr><td>fs.lines(path)</td><td>→ array of strings</td></tr>
+        <tr><td>fs.read_json(path)</td><td>→ dict</td></tr>
+        <tr><td>fs.write_json(path, obj)</td><td>→ null</td></tr>
+        <tr><td>os.exec(command)</td><td>→ {stdout, stderr, code}</td></tr>
+        <tr><td>os.env(key)</td><td>→ string</td></tr>
+        <tr><td>os.hostname()</td><td>→ string</td></tr>
+        <tr><td>os.is_root()</td><td>→ bool</td></tr>
+        <tr><td>time.now()</td><td>→ datetime string</td></tr>
+        <tr><td>time.timestamp()</td><td>→ int (unix)</td></tr>
+        <tr><td>time.sleep(seconds)</td><td>→ null</td></tr>
+      </table>
+    </div>
+
+  </div>
+
+  <!-- ── CLI ── -->
+  <div class="sec-title" id="cli"><span>#</span> CLI Reference</div>
+  <div class="cli-grid">
+    <div class="cli-row">
+      <div class="cmd">koppa run script.kop</div>
+      <div class="desc">Run a script (interpreter)</div>
+    </div>
+    <div class="cli-row">
+      <div class="cmd">koppa run --vm script.kop</div>
+      <div class="desc">Run with bytecode VM</div>
+    </div>
+    <div class="cli-row">
+      <div class="cmd">koppa compile script.kop</div>
+      <div class="desc">Compile to .kpc bytecode</div>
+    </div>
+    <div class="cli-row">
+      <div class="cmd">koppa repl</div>
+      <div class="desc">Interactive REPL</div>
+    </div>
+    <div class="cli-row">
+      <div class="cmd">koppa lex script.kop</div>
+      <div class="desc">Show token stream</div>
+    </div>
+    <div class="cli-row">
+      <div class="cmd">koppa parse script.kop</div>
+      <div class="desc">Show AST (JSON)</div>
+    </div>
+    <div class="cli-row">
+      <div class="cmd">koppa disasm script.kop</div>
+      <div class="desc">Disassemble bytecode</div>
+    </div>
+    <div class="cli-row">
+      <div class="cmd">koppa version</div>
+      <div class="desc">Show version info</div>
+    </div>
+    <div class="cli-row">
+      <div class="cmd">koppa -c 'log.info("hi")'</div>
+      <div class="desc">Run inline code</div>
+    </div>
+    <div class="cli-row">
+      <div class="cmd">koppa pkg install &lt;name&gt;</div>
+      <div class="desc">Install from registry</div>
+    </div>
+    <div class="cli-row">
+      <div class="cmd">koppa pkg search &lt;query&gt;</div>
+      <div class="desc">Search package registry</div>
+    </div>
+    <div class="cli-row">
+      <div class="cmd">koppa pkg list</div>
+      <div class="desc">List installed packages</div>
+    </div>
+    <div class="cli-row">
+      <div class="cmd">koppa pkg uninstall &lt;name&gt;</div>
+      <div class="desc">Remove a package</div>
+    </div>
+    <div class="cli-row">
+      <div class="cmd">koppa pkg update</div>
+      <div class="desc">Update all packages</div>
+    </div>
+  </div>
+
+  <!-- ── REPL commands ── -->
+  <div class="sec-title"><span>#</span> REPL Commands</div>
+  <div class="cli-grid">
+    <div class="cli-row">
+      <div class="cmd">help</div>
+      <div class="desc">Show available REPL commands</div>
+    </div>
+    <div class="cli-row">
+      <div class="cmd">modules</div>
+      <div class="desc">List all available modules</div>
+    </div>
+    <div class="cli-row">
+      <div class="cmd">clear</div>
+      <div class="desc">Clear the screen</div>
+    </div>
+    <div class="cli-row">
+      <div class="cmd">exit</div>
+      <div class="desc">Quit the REPL</div>
+    </div>
+  </div>
+
+  <!-- ── Full example ── -->
+  <div class="sec-title"><span>#</span> Full Script Example</div>
+  <div class="card">
+    <div class="card-title">Web Recon + Report</div>
+    <pre><span class="kw">import</span> dns, http, parse, fuzz, report, log
+
+<span class="kw">fn</span> <span class="fn">recon_target</span>(domain) {
+    log.info(<span class="str">"===== Recon: {domain} ====="</span>)
+
+    <span class="cmt"># DNS</span>
+    <span class="kw">let</span> ip  = dns.resolve(domain)
+    <span class="kw">let</span> rev = dns.reverse(ip)
+    log.info(<span class="str">"IP     : {ip}"</span>)
+    log.info(<span class="str">"Reverse: {rev}"</span>)
+
+    <span class="cmt"># HTTP</span>
+    <span class="kw">let</span> url  = <span class="str">"https://{domain}"</span>
+    <span class="kw">let</span> resp = http.get(url)
+    log.info(<span class="str">"Status : {resp.status}"</span>)
+    log.info(<span class="str">"Title  : {parse.html_title(resp.body)}"</span>)
+
+    <span class="cmt"># Quick fuzz</span>
+    <span class="kw">let</span> dirs = fuzz.dirs(url, [<span class="str">"admin"</span>, <span class="str">"login"</span>, <span class="str">"api"</span>, <span class="str">"backup"</span>])
+    <span class="kw">for</span> hit <span class="kw">in</span> dirs {
+        log.warn(<span class="str">"Found: {hit}"</span>)
+    }
+
+    <span class="cmt"># Build findings</span>
+    <span class="kw">let</span> findings = []
+    <span class="kw">if</span> dirs.len > <span class="num">0</span> {
+        findings.push(report.finding(<span class="str">"Exposed Directory"</span>, <span class="str">"Medium"</span>, <span class="str">"Found {dirs.len} path(s)"</span>))
+    }
+    <span class="kw">return</span> findings
+}
+
+<span class="kw">fn</span> <span class="fn">main</span>() {
+    <span class="kw">let</span> findings = recon_target(<span class="str">"example.com"</span>)
+
+    <span class="kw">if</span> findings.len > <span class="num">0</span> {
+        report.save(findings, <span class="str">"report.html"</span>, <span class="str">"html"</span>)
+        log.success(<span class="str">"Report saved."</span>)
+    } <span class="kw">else</span> {
+        log.info(<span class="str">"No findings."</span>)
+    }
+}</pre>
+  </div>
+
+</div><!-- /container -->
+
+<footer>
+  <div style="margin-bottom:8px">
+    <strong>KOPPA Language</strong> &nbsp;·&nbsp;
+    <a href="index.html">Home</a> &nbsp;·&nbsp;
+    <a href="https://github.com/guea14012/koppa-lang">GitHub</a> &nbsp;·&nbsp;
+    <a href="https://pypi.org/project/koppa-lang/">PyPI</a> &nbsp;·&nbsp;
+    <a href="https://guea14012.github.io/koppa-registry-/">Packages</a> &nbsp;·&nbsp;
+    <a href="playground.html">Playground</a>
+  </div>
+  <div>v2.0.1 &nbsp;·&nbsp; MIT License &nbsp;·&nbsp; Built for security professionals</div>
+</footer>
+
+</body>
+</html>
